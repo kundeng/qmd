@@ -1,7 +1,7 @@
 ---
 spec_id: 03-live-indexing
-status: ACTIVE
-closed_as: null
+status: CLOSED
+closed_as: SHIPPED
 since: 2026-11-02
 until: null
 epic: live-index
@@ -117,3 +117,4 @@ Anchored in `docs/design/live-index-daemon.md`: dataflow, workflows "A file save
 - 2026-11-02: spec written.
 - 2026-11-02: implemented on branch `live/03-live-indexing`. `src/store.ts`: the per-file scan body moved into `CollectionScan`, shared by `reindexCollection` and the new `reindexFiles`; `src/daemon/watcher.ts` (`CollectionWatcher`), `src/daemon/live-index.ts` (`LiveIndexer`, one serialized write queue), `src/daemon/control.ts` (control protocol: `update`, `embed`, `reload`, `cleanup`, `status`), `src/daemon/daemon.ts` (watchers, start-up reconcile, control handling, staleness adapter), `src/mcp/server.ts` (`stale` flag, pending line, `Live indexing` status line, default collections read per call so a session sees a collection added later), `src/cli/qmd.ts` (update, embed, cleanup, collection add/remove/rename delegate to a daemon holder; hooks still run in the CLI). Beyond the spec: `collection add|remove|rename` and `cleanup` delegate too, through a `reload` and a `cleanup` control op, because a daemon that holds the writer lock would otherwise block every collection change while any Claude session is open. Measured in the smoke run (`QMD_WATCH_DEBOUNCE_MS=300`): a saved file is keyword-searchable 350 ms after the save, a deleted file is gone within one flush, a new directory triggers a full scan that completes in under 400 ms on a 3-file collection; start-up reconcile of 2 files took 8 ms. Tests: `test/reindex-files.test.ts` (8), `test/watcher.test.ts` (12), `test/mcp-daemon-live.test.ts` (2 end to end), all passing under vitest on Node 24.12.0.
 - 2026-11-02: committed as d519aad on `live/03-live-indexing`; `test/cli.test.ts` 175 passing under vitest after the delegation changes; `test/mcp-daemon-live.test.ts` passing under bun once `removeCollection` counted rows before deleting (bun:sqlite reports a statement's `changes` from the connection counter later statements have moved). Full-suite run recorded at close.
+- 2026-11-02: closed as shipped at d519aad. Full suite (`bun run test:unit`, CI worktree): vitest 63 files all passing; bun 1579 passing with the same two pre-existing memory-budget failures as upstream main (`measurement-2026-11-02-live-daemon/suite-03-live-indexing.log`).
