@@ -1,7 +1,7 @@
 ---
 spec_id: 04-project-collections
-status: ACTIVE
-closed_as: null
+status: CLOSED
+closed_as: SHIPPED
 since: 2026-11-02
 until: null
 epic: live-index
@@ -72,3 +72,4 @@ WHEN the daemon embeds, THE indexer SHALL pass `chunkStrategy: "auto"`.
 ## Log
 - 2026-11-02: spec written.
 - 2026-11-02: committed as 35e1a86 on `live/04-project-collections`. `initLocalIndex` adds `docs` and `code` presets rooted at the project (absolute path, as `collection add` writes; relative paths are resolved only by the trust check, `src/trust.ts:200`, not by the scanner, so a cloned `.qmd/index.yml` still names the original machine's path: open item) and writes `.qmd/.gitignore`. Tests: `test/cli.test.ts` "CLI Init Command" (4) under vitest and bun. R3 (orphan cleanup after replaced hashes) and R4 (auto chunking) were delivered by sprint 03's `LiveIndexer`; verification on inventory-catalog is in the measurement record.
+- 2026-11-02: closed as shipped at 35e1a86 (`live/main`). Full suite: vitest 63 files all passing; bun 1580 passing, 3 failing: the two pre-existing memory-budget tests, plus `cli.test.ts` "named-index daemon does not collide with the default daemon pidfile (#772)", whose `waitForServer` timed out while the benchmark daemon still held 10 GB on the machine; the same describe block passes 11/11 on an immediate rerun (`suite-04-project-collections.log`). End-to-end verification on inventory-catalog: `measurement-2026-11-02-live-daemon/README.md`.

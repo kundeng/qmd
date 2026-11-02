@@ -15,7 +15,7 @@ Stacked, each the unit of one PR, in this order. Nothing was opened against `tob
 | 1 | `live/01-writer-lock` | fix(index): one writer lock for update, embed, collection and cleanup | `docs/specs/01-writer-lock` (SHIPPED) |
 | 2 | `live/02-daemon-proxy` | feat(mcp): share one daemon per index across stdio sessions | `docs/specs/02-daemon-proxy` (SHIPPED) |
 | 3 | `live/03-live-indexing` | feat(index): keep the index current from file events | `docs/specs/03-live-indexing` (SHIPPED) |
-| 4 | `live/04-project-collections` | feat(init): docs and code collections for a project index | `docs/specs/04-project-collections` |
+| 4 | `live/04-project-collections` | feat(init): docs and code collections for a project index | `docs/specs/04-project-collections` (SHIPPED) |
 | — | `live/main` | the four together, for running the fork | |
 | — | `live/00-spec` | design, specs, decisions, measurements; not for upstream | |
 
@@ -24,7 +24,7 @@ Each code branch carries its CHANGELOG lines and README text. Each spec's Log na
 ## Verification
 
 - `bun run test:types` and `bun run lint` are clean on every branch.
-- Full suite (`bun run test:unit`: vitest under Node 24.12.0, then bun 1.3.6) on the sprint 02 and sprint 03 commits: vitest 60 and 63 files all passing; bun 1557 and 1579 passing with two failures, `store.test.ts` "legacy fingerprint adoption ... within a 16 MiB SQLite budget" and `doctor-vector-sampling.test.ts` "... within a 32 MiB SQLite budget", which fail identically on untouched upstream `main` (86d2365) on this machine (`measurement-2026-11-02-live-daemon/bun-budget-main.log`).
+- Full suite (`bun run test:unit`: vitest under Node 24.12.0, then bun 1.3.6) on the sprint 02, 03 and 04 commits: vitest 60, 63 and 63 files all passing; bun 1557, 1579 and 1580 passing with two failures, `store.test.ts` "legacy fingerprint adoption ... within a 16 MiB SQLite budget" and `doctor-vector-sampling.test.ts` "... within a 32 MiB SQLite budget", which fail identically on untouched upstream `main` (86d2365) on this machine (`measurement-2026-11-02-live-daemon/bun-budget-main.log`).
 - New tests: writer lock (15 + 3 CLI), daemon paths and hello (10), client registry (6), daemon end to end (4), reindexFiles (8), watcher (12), live indexing end to end (2), init (4).
 
 ## Measurements
