@@ -3,7 +3,15 @@ import type { Database, SQLiteValue } from "../db.js";
 import fastGlob from "fast-glob";
 import { spawn as nodeSpawn } from "child_process";
 import { isQmdMcpPid, mcpDaemonStateFiles } from "./mcp-pid.js";
-import { embedLockPathForDb, tryAcquireEmbedLock, EMBED_LOCK_BUSY_MESSAGE } from "./embed-lock.js";
+import {
+  tryAcquireWriterLock,
+  readWriterLock,
+  isLiveWriterLockHolder,
+  writerLockHeldMessage,
+  EMBED_LOCK_BUSY_MESSAGE,
+  type WriterLockHandle,
+  type WriterMode,
+} from "../daemon/writer-lock.js";
 import { fileURLToPath } from "url";
 import { basename, dirname, join as pathJoin, relative as relativePath, resolve as pathResolve } from "path";
 import { parseArgs } from "util";
@@ -224,6 +232,21 @@ function getDbPath(): string {
 
 function getActiveIndexName(): string {
   return currentIndexName;
+}
+
+/**
+ * Take the index writer lock for a command that changes the index, or exit 1
+ * naming the live holder. Released on process exit as well as by the caller,
+ * since several writers end through process.exit on a failed step.
+ */
+function acquireWriterLockOrExit(mode: WriterMode): WriterLockHandle {
+  const lock = tryAcquireWriterLock(getDbPath(), mode);
+  if (lock.kind === "taken") {
+    console.error(`${c.yellow}${writerLockHeldMessage(lock.holder, lock.lockPath)}${c.reset}`);
+    process.exit(1);
+  }
+  process.once("exit", lock.release);
+  return lock;
 }
 
 function mcpDaemonPaths(): { cacheDir: string; pidPath: string; logPath: string } {
@@ -569,6 +592,10 @@ async function showStatus(): Promise<void> {
       try { unlinkSync(mcpPidPath); } catch { /* ignore */ }
       // Stale / recycled PID file cleaned up silently
     }
+  }
+  const writer = readWriterLock(dbPath);
+  if (writer && isLiveWriterLockHolder(writer.pid)) {
+    console.log(`Writer: ${c.yellow}${writer.mode}${c.reset} (PID ${writer.pid})`);
   }
   console.log("");
 
@@ -921,6 +948,7 @@ function manageTrust(subcommand?: string): void {
 async function updateCollections(): Promise<void> {
   // Prompt before opening the store so an approval is visible to getStore (#889).
   const allowed = await resolveLocalConfigTrust();
+  const writerLock = acquireWriterLockOrExit("update");
 
   const db = getDb();
   const storeInstance = getStore();
@@ -1033,6 +1061,7 @@ async function updateCollections(): Promise<void> {
   // Check if any documents need embedding (show once at end)
   const needsEmbedding = getHashesNeedingEmbedding(db);
   closeDb();
+  writerLock.release();
 
   console.log(`${c.green}✓ All collections updated.${c.reset}`);
   if (staleVectors > 0) {
@@ -1907,6 +1936,8 @@ async function collectionAdd(pwd: string, globPattern: string, name?: string): P
     process.exit(1);
   }
 
+  const writerLock = acquireWriterLockOrExit("collection");
+
   // Add to YAML config + sync to SQLite
   const { addCollection } = await import("../collections.js");
   addCollection(collName, pwd, globPattern);
@@ -1918,6 +1949,7 @@ async function collectionAdd(pwd: string, globPattern: string, name?: string): P
   console.log(`Creating collection '${collName}'...`);
   const newColl = getCollectionFromYaml(collName);
   await indexFiles(pwd, globPattern, collName, false, newColl?.ignore);
+  writerLock.release();
   console.log(`${c.green}✓${c.reset} Collection '${collName}' created successfully`);
 }
 
@@ -1930,11 +1962,13 @@ function collectionRemove(name: string): void {
     process.exit(1);
   }
 
+  const writerLock = acquireWriterLockOrExit("collection");
   const db = getDb();
   const result = removeCollection(db, name);
   // Also remove from YAML config
   yamlRemoveCollectionFn(name);
   closeDb();
+  writerLock.release();
 
   console.log(`${c.green}✓${c.reset} Removed collection '${name}'`);
   console.log(`  Deleted ${result.deletedDocs} documents`);
@@ -1960,11 +1994,13 @@ function collectionRename(oldName: string, newName: string): void {
     process.exit(1);
   }
 
+  const writerLock = acquireWriterLockOrExit("collection");
   const db = getDb();
   renameCollection(db, oldName, newName);
   // Also rename in YAML config
   yamlRenameCollectionFn(oldName, newName);
   closeDb();
+  writerLock.release();
 
   console.log(`${c.green}✓${c.reset} Renamed collection '${oldName}' to '${newName}'`);
   console.log(`  Virtual paths updated: ${c.cyan}qmd://${oldName}/${c.reset} → ${c.cyan}qmd://${newName}/${c.reset}`);
@@ -2395,13 +2431,20 @@ async function vectorIndex(
   const storeInstance = getStore();
   const db = storeInstance.db;
 
-  // Exclusive process lock — concurrent embeds race on vector_rows (#825)
-  const embedLock = tryAcquireEmbedLock(embedLockPathForDb(getDbPath()));
-  if (!embedLock) {
-    console.log(EMBED_LOCK_BUSY_MESSAGE);
+  // One writer per index. A second embed is skipped with the #825 message;
+  // any other writer (update, cleanup, the daemon) is reported and fails.
+  const embedLock = tryAcquireWriterLock(getDbPath(), "embed");
+  if (embedLock.kind === "taken") {
+    if (embedLock.holder?.mode === "embed") {
+      console.log(EMBED_LOCK_BUSY_MESSAGE);
+      closeDb();
+      return;
+    }
+    console.error(`${c.yellow}${writerLockHeldMessage(embedLock.holder, embedLock.lockPath)}${c.reset}`);
     closeDb();
-    return;
+    process.exit(1);
   }
+  process.once("exit", embedLock.release);
 
   try {
     if (force) {
@@ -5261,9 +5304,11 @@ if (isMain) {
         break;
       }
 
+      const writerLock = acquireWriterLockOrExit("cleanup");
       const stats = runCleanup(db, {
         onVectorRepack: (layout) => console.log(`Repacking the vector table (${describeVectorLayout(layout)})...`),
       });
+      writerLock.release();
       console.log(`${c.green}✓${c.reset} Cleared ${stats.cacheCount} cached API responses`);
       if (stats.orphanedVectors > 0) {
         console.log(`${c.green}✓${c.reset} Removed ${stats.orphanedVectors} orphaned embedding chunks`);

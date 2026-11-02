@@ -3229,3 +3229,76 @@ fi
     }
   });
 });
+
+describe("writer lock across CLI writers", () => {
+  const holderTs = join(thisDir, "_helpers", "writer-lock-holder.ts");
+
+  /** Hold the writer lock for `dbPath` from a child that looks like a qmd process. */
+  function holdWriterLock(dbPath: string, mode: string, holdMs: number) {
+    const args = isBunRuntime
+      ? [holderTs, dbPath, mode, String(holdMs), "qmd", mode]
+      : [tsxCli, holderTs, dbPath, mode, String(holdMs), "qmd", mode];
+    const child = spawn(process.execPath, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
+    const held = new Promise<void>((resolve, reject) => {
+      const start = Date.now();
+      const timer = setInterval(() => {
+        if (stdout.includes("HOLD")) { clearInterval(timer); resolve(); }
+        else if (Date.now() - start > 8000) { clearInterval(timer); reject(new Error("holder never acquired")); }
+      }, 20);
+    });
+    const exited = new Promise<void>((resolve) => child.on("close", () => resolve()));
+    return { child, held, exited };
+  }
+
+  test("qmd update exits 1 naming the holder while another writer holds the lock", async () => {
+    const { dbPath, configDir } = await createIsolatedTestEnv("writer-lock-update");
+    await runQmd(["collection", "add", fixturesDir, "--name", "locked"], { dbPath, configDir });
+    const holder = holdWriterLock(dbPath, "embed", 3000);
+    await holder.held;
+    try {
+      const result = await runQmd(["update"], { dbPath, configDir });
+      expect(result.exitCode).toBe(1);
+      // Under tsx the holder runs in a grandchild, so only the mode is asserted, not the pid.
+      expect(result.stderr).toContain("qmd embed (PID ");
+      expect(result.stderr).toContain(".qmd-writer.lock");
+
+      const status = await runQmd(["status"], { dbPath, configDir });
+      expect(status.stdout).toContain("Writer: embed (PID ");
+    } finally {
+      holder.child.kill("SIGTERM");
+      await holder.exited;
+    }
+  }, 30_000);
+
+  test("qmd collection remove and cleanup also refuse while the lock is held", async () => {
+    const { dbPath, configDir } = await createIsolatedTestEnv("writer-lock-others");
+    await runQmd(["collection", "add", fixturesDir, "--name", "locked"], { dbPath, configDir });
+    const holder = holdWriterLock(dbPath, "update", 4000);
+    await holder.held;
+    try {
+      const remove = await runQmd(["collection", "remove", "locked"], { dbPath, configDir });
+      expect(remove.exitCode).toBe(1);
+      expect(remove.stderr).toContain("qmd update (PID");
+      const cleanup = await runQmd(["cleanup"], { dbPath, configDir });
+      expect(cleanup.exitCode).toBe(1);
+      expect(cleanup.stderr).toContain("qmd update (PID");
+      // Dry run reads only and must not take the lock.
+      const dry = await runQmd(["cleanup", "--dry-run"], { dbPath, configDir });
+      expect(dry.exitCode).toBe(0);
+    } finally {
+      holder.child.kill("SIGTERM");
+      await holder.exited;
+    }
+  }, 30_000);
+
+  test("a writer releases the lock when it finishes", async () => {
+    const { dbPath, configDir } = await createIsolatedTestEnv("writer-lock-release");
+    const add = await runQmd(["collection", "add", fixturesDir, "--name", "released"], { dbPath, configDir });
+    expect(add.exitCode).toBe(0);
+    const update = await runQmd(["update"], { dbPath, configDir });
+    expect(update.exitCode).toBe(0);
+    expect(existsSync(join(dirname(dbPath), ".qmd-writer.lock"))).toBe(false);
+  }, 30_000);
+});

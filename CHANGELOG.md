@@ -4,6 +4,15 @@
 
 ### Fixed
 
+- One writer lock per index. `qmd update`, `qmd collection add`, `qmd collection
+  remove`, `qmd collection rename` and `qmd cleanup` now take the same lock
+  `qmd embed` has held since #825, as `.qmd-writer.lock` beside the index, so
+  two scans or a scan racing an embed no longer interleave at batch boundaries
+  and report counts the other one invalidated. A second writer prints which
+  qmd command holds the lock (mode and PID) and exits 1; a second embed keeps
+  its "Another embed process is already running. Skipping." message. A lock
+  left by a dead process, or by a PID that now belongs to something other than
+  qmd, is cleared and taken. `qmd status` shows the live holder as `Writer:`.
 - `qmd doctor` selects vector sample identities before loading document bodies,
   avoiding excessive SQLite memory use on large indexes with duplicate paths.
   #978 (thanks @naveenspark)
