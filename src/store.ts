@@ -1778,24 +1778,6 @@ const UNTRUSTED_SYNC_MTIME = -1;
 export const REINDEX_MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 /**
- * Deactivate a previously indexed file that can no longer be indexed (it
- * became empty or grew past REINDEX_MAX_FILE_SIZE) and drop its sync row, so
- * its old content stops being searchable.
- */
-function retireIndexedFile(
-  db: Database,
-  collectionName: string,
-  path: string,
-  livePaths: ReadonlySet<string>,
-  syncStateMap: Map<string, FileSyncStateRow>,
-): void {
-  if (!findOrMigrateLegacyDocument(db, collectionName, path, livePaths)) return;
-  deactivateDocument(db, collectionName, path);
-  deleteFileSyncStateForCollection(db, collectionName, path);
-  syncStateMap.delete(path);
-}
-
-/**
  * Groups the per-file writes of a collection scan into short transactions.
  * Committed one by one, a first index of a large collection writes a content
  * row, a document, its metadata and a sync row per file, each its own WAL
@@ -1874,13 +1856,6 @@ async function reindexCollectionIn(
   }
 ): Promise<ReindexResult> {
   const db = store.db;
-  const now = new Date().toISOString();
-  const excludeDirs = ["node_modules", ".git", ".cache", "vendor", "dist", "build"];
-
-  const allIgnore = [
-    ...excludeDirs.map(d => `**/${d}/**`),
-    ...(options?.ignorePatterns || []),
-  ];
 
   // A missing root (unmounted drive, offline share, deleted folder) globs to
   // an empty list, which the deactivation pass below would read as "every
@@ -1906,34 +1881,148 @@ async function reindexCollectionIn(
     onlyFiles: true,
     followSymbolicLinks: false,
     dot: false,
-    ignore: allIgnore,
+    ignore: collectionIgnoreGlobs(options?.ignorePatterns),
   });
   // Filter hidden files/folders
-  const files = allFiles.filter(file => {
-    const parts = file.split("/");
-    return !parts.some(part => part.startsWith("."));
-  });
+  const files = allFiles.filter(file => !isHiddenRelativePath(file));
 
-  const total = files.length;
-  let indexed = 0, updated = 0, unchanged = 0, processed = 0, metadataErrors = 0;
-  const skippedFiles: ReindexSkippedFile[] = [];
-  const seenPaths = new Set<string>();
-  const livePaths = new Set(files.map(f => normalizePathSeparators(f)));
-
-  // Load file_sync_state for this collection (mtime+size fast-path)
-  const syncStateMap = getFileSyncStateMap(db, collectionName);
-
+  const scan = new CollectionScan(db, batch, collectionPath, collectionName, files, options?.onProgress);
   for (const relativeFile of files) {
-    batch.next();
-    const path = normalizePathSeparators(relativeFile);
-    const filepath = getRealPath(resolve(collectionPath, relativeFile));
-    if (!isPathInsideDir(collectionPath, filepath)) {
-      processed++;
-      skippedFiles.push({ file: relativeFile, code: "OUTSIDE_COLLECTION" });
-      options?.onProgress?.({ file: relativeFile, current: processed, total });
-      continue;
+    await scan.indexFile(relativeFile);
+  }
+
+  // Deactivate documents that no longer exist + cleanup sync_state
+  const allActive = getActiveDocumentPaths(db, collectionName);
+  for (const path of allActive) {
+    if (!scan.seenPaths.has(path)) {
+      batch.next();
+      scan.retire(path);
     }
-    seenPaths.add(path);
+  }
+
+  batch.commit();
+
+  return scan.result(cleanupOrphanedContent(db));
+}
+
+/** Directories never indexed, at any depth, whatever the collection pattern says. */
+export const REINDEX_EXCLUDED_DIRS = ["node_modules", ".git", ".cache", "vendor", "dist", "build"];
+
+/** The fast-glob ignore list for a collection: the built-in directories plus its own patterns. */
+export function collectionIgnoreGlobs(ignorePatterns?: readonly string[]): string[] {
+  return [
+    ...REINDEX_EXCLUDED_DIRS.map(d => `**/${d}/**`),
+    ...(ignorePatterns || []),
+  ];
+}
+
+/** A path with a dot-prefixed segment is hidden; `dot: false` covers only the top level. */
+export function isHiddenRelativePath(relativePath: string): boolean {
+  return relativePath.split("/").some(part => part.startsWith("."));
+}
+
+/**
+ * Re-index the named files of one collection: the per-file body of a full
+ * scan, applied to a chosen set of relative paths. A path that no longer
+ * exists, or is no longer a regular file, deactivates its document. Used by
+ * the live indexer for the files a watcher reported; a full scan is
+ * `reindexCollection`.
+ */
+export async function reindexFiles(
+  store: Store,
+  collectionPath: string,
+  collectionName: string,
+  relativePaths: readonly string[],
+  options?: { onProgress?: (info: ReindexProgress) => void }
+): Promise<ReindexResult> {
+  const batch = scanWriteBatch(store.db);
+  try {
+    const paths = [...new Set(relativePaths.map(normalizePathSeparators))].filter(p => p && !isHiddenRelativePath(p));
+    const scan = new CollectionScan(store.db, batch, collectionPath, collectionName, paths, options?.onProgress, { missingIsRemoval: true });
+    for (const relativeFile of paths) {
+      await scan.indexFile(relativeFile);
+    }
+    batch.commit();
+    return scan.result(cleanupOrphanedContent(store.db));
+  } catch (err) {
+    batch.rollback();
+    throw err;
+  }
+}
+
+/**
+ * The per-file work of a collection scan, shared by the full scan and the
+ * targeted re-index. Owns the counters, the sync-state cache and the set of
+ * paths seen, so the two callers differ only in how they choose files and
+ * whether an unseen path means a deletion.
+ */
+class CollectionScan {
+  readonly seenPaths = new Set<string>();
+  private readonly livePaths: Set<string>;
+  private readonly syncStateMap: Map<string, FileSyncStateRow>;
+  private readonly now = new Date().toISOString();
+  private readonly total: number;
+  private indexed = 0;
+  private updated = 0;
+  private unchanged = 0;
+  private removed = 0;
+  private processed = 0;
+  private metadataErrors = 0;
+  private readonly skippedFiles: ReindexSkippedFile[] = [];
+
+  constructor(
+    private readonly db: Database,
+    private readonly batch: ReturnType<typeof scanWriteBatch>,
+    private readonly collectionPath: string,
+    private readonly collectionName: string,
+    files: readonly string[],
+    private readonly onProgress?: (info: ReindexProgress) => void,
+    private readonly options: { missingIsRemoval?: boolean } = {},
+  ) {
+    this.total = files.length;
+    // Literal paths of every file in this scan. Passed to the legacy-path
+    // migration so it never adopts a row that still belongs to a live file.
+    this.livePaths = new Set(files.map(f => normalizePathSeparators(f)));
+    this.syncStateMap = getFileSyncStateMap(db, collectionName);
+  }
+
+  result(orphanedCleaned: number): ReindexResult {
+    return {
+      indexed: this.indexed, updated: this.updated, unchanged: this.unchanged, removed: this.removed,
+      orphanedCleaned, skipped: this.skippedFiles.length, skippedFiles: this.skippedFiles,
+      metadataErrors: this.metadataErrors,
+    };
+  }
+
+  /** Deactivate a document whose file is gone or can no longer be indexed. */
+  retire(path: string): void {
+    if (!findOrMigrateLegacyDocument(this.db, this.collectionName, path, this.livePaths)) return;
+    deactivateDocument(this.db, this.collectionName, path);
+    deleteFileSyncStateForCollection(this.db, this.collectionName, path);
+    this.syncStateMap.delete(path);
+    this.removed++;
+  }
+
+  private progress(relativeFile: string): void {
+    this.processed++;
+    this.onProgress?.({ file: relativeFile, current: this.processed, total: this.total });
+  }
+
+  private skip(relativeFile: string, code: string): void {
+    this.skippedFiles.push({ file: relativeFile, code });
+    this.progress(relativeFile);
+  }
+
+  async indexFile(relativeFile: string): Promise<void> {
+    const db = this.db;
+    this.batch.next();
+    const path = normalizePathSeparators(relativeFile);
+    const filepath = getRealPath(resolve(this.collectionPath, relativeFile));
+    if (!isPathInsideDir(this.collectionPath, filepath)) {
+      this.skip(relativeFile, "OUTSIDE_COLLECTION");
+      return;
+    }
+    this.seenPaths.add(path);
 
     // Stat first — mtime+size fast-path (no read)
     let stat: ReturnType<typeof statSync> | null = null;
@@ -1941,16 +2030,22 @@ async function reindexCollectionIn(
     try {
       stat = statSync(filepath);
     } catch (err) {
-      processed++;
-      skippedFiles.push({ file: relativeFile, code: fsErrorCode(err) });
-      options?.onProgress?.({ file: relativeFile, current: processed, total });
-      continue;
+      // A targeted re-index names files a watcher saw change; one that is gone
+      // now was deleted or moved away, so its document is retired.
+      if (this.options.missingIsRemoval && fsErrorCode(err) === "ENOENT") {
+        this.retire(path);
+        this.progress(relativeFile);
+        return;
+      }
+      this.skip(relativeFile, fsErrorCode(err));
+      return;
     }
 
-    if (!stat) {
-      processed++;
-      options?.onProgress?.({ file: relativeFile, current: processed, total });
-      continue;
+    if (!stat.isFile()) {
+      // A directory or special file at a path the index knew as a file.
+      if (this.options.missingIsRemoval) this.retire(path);
+      this.progress(relativeFile);
+      return;
     }
 
     const mtimeMs = stat.mtimeMs;
@@ -1959,26 +2054,20 @@ async function reindexCollectionIn(
 
     // Skip large files (>10MB) — prevents OOM
     if (size > REINDEX_MAX_FILE_SIZE) {
-      retireIndexedFile(db, collectionName, path, livePaths, syncStateMap);
-      processed++;
-      skippedFiles.push({ file: relativeFile, code: "FILE_TOO_LARGE" });
-      options?.onProgress?.({ file: relativeFile, current: processed, total });
-      continue;
+      this.retire(path);
+      this.skip(relativeFile, "FILE_TOO_LARGE");
+      return;
     }
 
     // Fast-path: stat matches cached sync state — skip read entirely
-    const cached = syncStateMap.get(path);
+    const cached = this.syncStateMap.get(path);
     // Missing or stale metadata (an index from before the metadata schema, or
     // an extraction-version bump) needs the content, so such a file is read and
     // re-extracted through the hash-match branch below.
     if (cached && cached.mtime_ms === Math.floor(mtimeMs) && cached.size === size && cached.metadata_current) {
-      unchanged++;
-      processed++;
-      options?.onProgress?.({ file: relativeFile, current: processed, total });
-      // Still need to ensure document exists (might have been deactivated externally)
-      // But we count as unchanged and avoid expensive read+hash+metadata sync.
-      // Note: metadata sync for unchanged is skipped in fast-path; if needed, disable fast-path or force re-read.
-      continue;
+      this.unchanged++;
+      this.progress(relativeFile);
+      return;
     }
 
     // Need to read file
@@ -1986,42 +2075,35 @@ async function reindexCollectionIn(
     try {
       content = readFileSync(filepath, "utf-8");
     } catch (err) {
-      processed++;
-      skippedFiles.push({ file: relativeFile, code: fsErrorCode(err) });
-      options?.onProgress?.({ file: relativeFile, current: processed, total });
-      continue;
+      this.skip(relativeFile, fsErrorCode(err));
+      return;
     }
 
     if (!content.trim()) {
       // Empty file — if previously indexed, deactivate it (treat as removed)
-      retireIndexedFile(db, collectionName, path, livePaths, syncStateMap);
-      processed++;
-      options?.onProgress?.({ file: relativeFile, current: processed, total });
-      continue;
+      this.retire(path);
+      this.progress(relativeFile);
+      return;
     }
 
     const hash = await hashContent(content);
 
     // Hash matches cached sync state but mtime differed (clock skew, backup restore) — only update mtime cache
     if (cached && cached.content_hash === hash) {
-      // Update sync state mtime/size only
-      upsertFileSyncState(db, collectionName, path, syncMtimeMs, size, hash, cached.document_id);
-      unchanged++;
-      processed++;
-      // Keep content in memory for metadata sync if needed? For speed, skip metadata sync on hash-match fast-path.
-      // Existing behavior for hash-same was to still do metadata backfill; we preserve it by loading documentId from cache.
-      // However we already have content here, so do metadata backfill for hash-match case.
-      const existingForMeta = findOrMigrateLegacyDocument(db, collectionName, path, livePaths);
+      upsertFileSyncState(db, this.collectionName, path, syncMtimeMs, size, hash, cached.document_id);
+      this.unchanged++;
+      // The content is already in hand, so a stale metadata extraction is refreshed here.
+      const existingForMeta = findOrMigrateLegacyDocument(db, this.collectionName, path, this.livePaths);
       if (existingForMeta) {
         const extraction = syncDocumentMetadata(db, existingForMeta.id, content, path, { onlyIfStale: true });
-        if (extraction?.error) metadataErrors++;
+        if (extraction?.error) this.metadataErrors++;
       }
-      options?.onProgress?.({ file: relativeFile, current: processed, total });
-      continue;
+      this.progress(relativeFile);
+      return;
     }
 
     const title = extractTitle(content, relativeFile);
-    const existing = findOrMigrateLegacyDocument(db, collectionName, path, livePaths);
+    const existing = findOrMigrateLegacyDocument(db, this.collectionName, path, this.livePaths);
 
     let documentId: number;
     let contentChanged = true;
@@ -2031,53 +2113,34 @@ async function reindexCollectionIn(
       if (existing.hash === hash) {
         contentChanged = false;
         if (existing.title !== title) {
-          updateDocumentTitle(db, existing.id, title, now);
-          updated++;
+          updateDocumentTitle(db, existing.id, title, this.now);
+          this.updated++;
         } else {
-          unchanged++;
+          this.unchanged++;
         }
       } else {
-        insertContent(db, hash, content, now);
+        insertContent(db, hash, content, this.now);
         updateDocument(db, existing.id, title, hash, new Date(stat.mtime).toISOString());
-        updated++;
+        this.updated++;
       }
     } else {
-      indexed++;
-      insertContent(db, hash, content, now);
-      documentId = insertDocument(db, collectionName, path, title, hash,
-        stat ? new Date(stat.birthtime).toISOString() : now,
+      this.indexed++;
+      insertContent(db, hash, content, this.now);
+      documentId = insertDocument(db, this.collectionName, path, title, hash,
+        new Date(stat.birthtime).toISOString(),
         new Date(stat.mtime).toISOString());
     }
 
     // Upsert sync state after successful indexing
-    upsertFileSyncState(db, collectionName, path, syncMtimeMs, size, hash, documentId);
+    upsertFileSyncState(db, this.collectionName, path, syncMtimeMs, size, hash, documentId);
 
     // Metadata extraction
     const extraction = syncDocumentMetadata(db, documentId, content, path,
       contentChanged ? undefined : { onlyIfStale: true });
-    if (extraction?.error) metadataErrors++;
+    if (extraction?.error) this.metadataErrors++;
 
-    processed++;
-    options?.onProgress?.({ file: relativeFile, current: processed, total });
+    this.progress(relativeFile);
   }
-
-  // Deactivate documents that no longer exist + cleanup sync_state
-  const allActive = getActiveDocumentPaths(db, collectionName);
-  let removed = 0;
-  for (const path of allActive) {
-    if (!seenPaths.has(path)) {
-      batch.next();
-      deactivateDocument(db, collectionName, path);
-      deleteFileSyncStateForCollection(db, collectionName, path);
-      removed++;
-    }
-  }
-
-  batch.commit();
-
-  const orphanedCleaned = cleanupOrphanedContent(db);
-
-  return { indexed, updated, unchanged, removed, orphanedCleaned, skipped: skippedFiles.length, skippedFiles, metadataErrors };
 }
 
 export type EmbedFailure = {
@@ -4296,12 +4359,19 @@ export function removeCollection(db: Database, collectionName: string): { delete
   // leaves the mapping and id row out of step with the vec0 table, and the
   // update-time orphan cleanup skips rows whose documents are still active.
   return db.transaction(() => {
+    // Counted before the deletes: bun:sqlite reports a statement's `changes`
+    // from the connection's current counter, which later statements in the
+    // same transaction have moved on by the time the result is read.
+    const countDocs = (db.prepare(`SELECT COUNT(*) AS n FROM documents WHERE collection = ?`).get(collectionName) as { n: number }).n;
+    const countContent = () => (db.prepare(`SELECT COUNT(*) AS n FROM content`).get() as { n: number }).n;
+    const contentBefore = countContent();
+
     deleteVectorPartition(db, collectionName);
 
-    const docResult = db.prepare(`DELETE FROM documents WHERE collection = ?`).run(collectionName);
+    db.prepare(`DELETE FROM documents WHERE collection = ?`).run(collectionName);
     db.prepare(`DELETE FROM file_sync_state WHERE collection = ?`).run(collectionName);
 
-    const cleanupResult = db.prepare(`
+    db.prepare(`
       DELETE FROM content
       WHERE hash NOT IN (SELECT DISTINCT hash FROM documents WHERE active = 1)
     `).run();
@@ -4309,8 +4379,8 @@ export function removeCollection(db: Database, collectionName: string): { delete
     deleteStoreCollection(db, collectionName);
 
     return {
-      deletedDocs: docResult.changes,
-      cleanedHashes: cleanupResult.changes,
+      deletedDocs: countDocs,
+      cleanedHashes: contentBefore - countContent(),
     };
   }).immediate();
 }

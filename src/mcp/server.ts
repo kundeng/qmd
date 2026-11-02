@@ -53,6 +53,19 @@ type SearchResultItem = {
   metadata?: DocumentMetadata;  // Indexed qmd.metadata (present when non-empty)
   line: number;   // Absolute line in source markdown
   snippet: string;
+  /** Present when the file changed on disk and the daemon has not re-indexed it yet. */
+  stale?: true;
+};
+
+/**
+ * What the index daemon tells the tools about files that changed on disk and
+ * are not in the index yet. Absent in the in-process server, where nothing
+ * watches.
+ */
+export type LiveStatus = {
+  isPending: (collection: string, relativePath: string) => boolean;
+  pendingCount: () => number;
+  report: () => unknown;
 };
 
 /**
@@ -121,13 +134,18 @@ function encodeQmdPath(path: string): string {
 /**
  * Format search results as human-readable text summary
  */
-function formatSearchSummary(results: SearchResultItem[], query: string): string {
-  if (results.length === 0) {
-    return `No results found for "${query}"`;
+function formatSearchSummary(results: SearchResultItem[], query: string, pendingFiles: number = 0): string {
+  const lines: string[] = [];
+  if (pendingFiles > 0) {
+    lines.push(`Note: ${pendingFiles} file${pendingFiles === 1 ? '' : 's'} changed on disk and ${pendingFiles === 1 ? 'is' : 'are'} still being indexed; results marked [stale] may be out of date.`);
   }
-  const lines = [`Found ${results.length} result${results.length === 1 ? '' : 's'} for "${query}":\n`];
+  if (results.length === 0) {
+    lines.push(`No results found for "${query}"`);
+    return lines.join('\n');
+  }
+  lines.push(`Found ${results.length} result${results.length === 1 ? '' : 's'} for "${query}":\n`);
   for (const r of results) {
-    lines.push(`${r.docid} ${Math.round(r.score * 100)}% ${r.file} - ${r.title}`);
+    lines.push(`${r.docid} ${Math.round(r.score * 100)}% ${r.file} - ${r.title}${r.stale ? ' [stale]' : ''}`);
   }
   return lines.join('\n');
 }
@@ -213,6 +231,13 @@ async function buildInstructions(store: QMDStore): Promise<string> {
   return lines.join("\n");
 }
 
+/** Whether the daemon has a pending change for the document at a `qmd://collection/path` URI. */
+function isStale(live: LiveStatus | undefined, store: QMDStore, virtualPath: string): boolean {
+  if (!live) return false;
+  const parsed = store.internal.parseVirtualPath(virtualPath);
+  return parsed !== null && live.isPending(parsed.collectionName, parsed.path);
+}
+
 /**
  * Cache built instructions per store. The HTTP transport builds a fresh
  * McpServer per request (sessionless MCP 2026-07-28), and buildInstructions()
@@ -248,7 +273,7 @@ function getInstructions(store: QMDStore): Promise<string> {
  * Create an MCP server with all QMD tools, resources, and prompts registered.
  * Shared by both stdio and HTTP transports.
  */
-export async function createMcpServer(store: QMDStore, inflight?: InflightGate): Promise<McpServer> {
+export async function createMcpServer(store: QMDStore, inflight?: InflightGate, live?: LiveStatus): Promise<McpServer> {
   // Wraps request handlers so a stdio EOF shutdown can wait for in-flight
   // work to settle before disposing the store/llm underneath it.
   const track = inflight?.track ?? (<T,>(fn: T): T => fn);
@@ -266,8 +291,10 @@ export async function createMcpServer(store: QMDStore, inflight?: InflightGate):
     },
   );
 
-  // Pre-fetch default collection names for search tools
-  const defaultCollectionNames = await store.getDefaultCollectionNames();
+  // Default collections are read per call: a daemon session outlives
+  // `qmd collection add`, and a list fixed at connect time would never see
+  // the new collection. The read is one small SELECT.
+  const defaultCollections = () => store.getDefaultCollectionNames();
 
   // ---------------------------------------------------------------------------
   // Resource: qmd://{path} - read-only access to documents by path
@@ -452,7 +479,7 @@ Intent-aware lex (C++ performance, not sports):
       }
 
       // Use default collections if none specified
-      const effectiveCollections = collections ?? defaultCollectionNames;
+      const effectiveCollections = collections ?? await defaultCollections();
 
       // Plain `query` is auto-expanded by the SDK (expand → fuse → rerank);
       // `searches` runs the caller's typed sub-queries directly.
@@ -489,12 +516,14 @@ Intent-aware lex (C++ performance, not sports):
           ...(Object.keys(r.metadata).length > 0 ? { metadata: r.metadata } : {}),
           line,
           snippet: addLineNumbers(snippet, line),
+          ...(isStale(live, store, r.file) ? { stale: true as const } : {}),
         };
       });
+      const pendingFiles = live?.pendingCount() ?? 0;
 
       return {
-        content: [{ type: "text", text: formatSearchSummary(filtered, primaryQuery) }],
-        structuredContent: { results: filtered },
+        content: [{ type: "text", text: formatSearchSummary(filtered, primaryQuery, pendingFiles) }],
+        structuredContent: { results: filtered, ...(pendingFiles > 0 ? { pendingFiles } : {}) },
       };
     })
   );
@@ -684,10 +713,15 @@ Intent-aware lex (C++ performance, not sports):
       if (status.collections.some(col => col.metadataKeys.length > 0)) {
         summary.push(`  Metadata: call the 'metadata' tool to see values and counts before writing a 'filter'`);
       }
+      const daemon = live?.report();
+      if (daemon !== undefined) {
+        const pending = live!.pendingCount();
+        summary.push(`  Live indexing: on${pending > 0 ? ` (${pending} change${pending === 1 ? '' : 's'} pending)` : ''}`);
+      }
 
       return {
         content: [{ type: "text", text: summary.join('\n') }],
-        structuredContent: status,
+        structuredContent: daemon !== undefined ? { ...status, daemon } : status,
       };
     })
   );
@@ -752,7 +786,7 @@ Every value reported here can be matched with \`{field: '<metadata-key>', operat
         };
       }
 
-      const effectiveCollections = collections ?? defaultCollectionNames;
+      const effectiveCollections = collections ?? await defaultCollections();
       let result: ListMetadataResult;
       try {
         result = await store.listMetadata({

@@ -30,6 +30,11 @@ import {
   type DaemonPaths,
 } from "./paths.js";
 import { tryAcquireWriterLock, writerLockHeldMessage, type WriterLockHandle } from "./writer-lock.js";
+import { CollectionWatcher, type WatchedCollection } from "./watcher.js";
+import { LiveIndexer } from "./live-index.js";
+import { parseControlRequest, encodeControl, type ControlRequest, type ControlEvent, type DaemonStatusReport } from "./control.js";
+import { runCleanup } from "../store.js";
+import type { LiveStatus } from "../mcp/server.js";
 
 export const DEFAULT_IDLE_MS = 300_000;
 export const DEFAULT_MAX_IDLE_MS = 1_800_000;
@@ -51,6 +56,10 @@ export type DaemonOptions = {
   isAlive?: IsAlive;
   /** Called after the store is open, before clients are served. */
   onReady?: (daemon: IndexDaemon) => void | Promise<void>;
+  /** Watch collection roots for changes (default: unless `QMD_NO_WATCH=1`). */
+  watch?: boolean;
+  /** Embed after changes (default: unless `QMD_DAEMON_EMBED=0`). */
+  embed?: boolean;
 };
 
 type ClientHandle = { handle: StdioServerHandle; socket: Socket };
@@ -74,6 +83,11 @@ export class IndexDaemon {
   private sweepTimer: NodeJS.Timeout | null = null;
   private stopping: Promise<void> | null = null;
   private readonly inflight = createInflightGate();
+  private indexer: LiveIndexer | null = null;
+  private readonly watchers = new Map<string, CollectionWatcher>();
+  private readonly watchEnabled: boolean;
+  private readonly embedOption: boolean | undefined;
+  private startedAt = 0;
   private resolveExited: (() => void) | null = null;
   /** Resolves once `stop` has finished its cleanup. */
   readonly exited: Promise<void> = new Promise((resolve) => { this.resolveExited = resolve; });
@@ -88,6 +102,18 @@ export class IndexDaemon {
     this.log = options.log ?? ((line) => process.stderr.write(`${new Date().toISOString()} ${line}\n`));
     this.isAlive = options.isAlive ?? isProcessAlive;
     this.clients = new ClientRegistry<ClientHandle>();
+    this.watchEnabled = options.watch ?? (process.env.QMD_NO_WATCH !== "1");
+    this.embedOption = options.embed;
+  }
+
+  /** The indexer; null before `start` and after `stop`. */
+  getIndexer(): LiveIndexer | null {
+    return this.indexer;
+  }
+
+  /** Watcher states for `status`. */
+  watcherStatus() {
+    return [...this.watchers.values()].map((w) => w.status());
   }
 
   /** The store this daemon serves; null before `start` and after `stop`. */
@@ -125,6 +151,8 @@ export class IndexDaemon {
     try {
       this.server = await this.bind();
       this.store = await openMcpStore(this.dbPath);
+      this.startedAt = record.startedAt;
+      this.indexer = new LiveIndexer(this.store, { log: this.log, embed: this.embedOption });
       writeFileSync(this.paths.infoPath, JSON.stringify({
         pid: process.pid,
         dbPath: this.dbPath,
@@ -139,6 +167,9 @@ export class IndexDaemon {
 
     this.log(`daemon listening on ${this.paths.socketPath} (pid ${process.pid}, qmd ${this.version}, index ${this.dbPath}); idle exit after ${this.idleMs} ms`);
     await onReady?.(this);
+    this.startWatchers();
+    // Catch up on edits made while no daemon ran. Sessions are served meanwhile.
+    void this.indexer.reconcileAll().catch((err) => this.log(`start-up reconcile failed: ${err instanceof Error ? err.message : String(err)}`));
     // Nobody is connected yet: a daemon spawned by a launcher that then died
     // must still go away.
     this.armIdleTimer();
@@ -193,6 +224,11 @@ export class IndexDaemon {
         socket.destroy();
         return;
       }
+      const control = first.line === null ? null : parseControlRequest(first.line);
+      if (control) {
+        void this.handleControl(socket, control);
+        return;
+      }
       const hello = first.line === null ? null : parseClientHello(first.line);
       if (first.line !== null && !hello) {
         // Not a hello: the line is the client's first JSON-RPC message.
@@ -200,7 +236,8 @@ export class IndexDaemon {
       }
       const store = this.store;
       const transport = new StdioServerTransport(socket, socket);
-      const handle = serveStdio(() => createMcpServer(store, this.inflight), { transport });
+      const live = this.liveStatus();
+      const handle = serveStdio(() => createMcpServer(store, this.inflight, live), { transport });
       const client: ClientHandle = { handle, socket };
       this.clients.add(client, hello ? { pid: hello.pid, hostPid: hello.hostPid } : null);
       this.disarmIdleTimer();
@@ -271,6 +308,8 @@ export class IndexDaemon {
       }
       this.idleTimer = this.backstopTimer = this.sweepTimer = null;
       this.log(`shutting down (${reason}; clients=${this.clients.size})`);
+      for (const watcher of this.watchers.values()) watcher.stop();
+      this.watchers.clear();
       for (const entry of this.clients.entries()) {
         try { await entry.handle.handle.close(); } catch { /* best-effort */ }
         try { entry.handle.socket.destroy(); } catch { /* ignore */ }
@@ -281,6 +320,11 @@ export class IndexDaemon {
         this.server = null;
       }
       await this.inflight.waitForIdle(5000);
+      // Let a write in flight finish; the queue holds at most what the watchers queued.
+      if (this.indexer) {
+        await Promise.race([this.indexer.run("stop", async () => {}), new Promise((r) => setTimeout(r, 15_000))]);
+        this.indexer = null;
+      }
       if (this.store) {
         try { await this.store.close(); } catch (err) { this.log(`store close failed: ${err instanceof Error ? err.message : String(err)}`); }
         this.store = null;
@@ -293,6 +337,100 @@ export class IndexDaemon {
       this.resolveExited?.();
     })();
     return this.stopping;
+  }
+
+  /** One watcher per collection; a collection whose root cannot be watched is reported, not fatal. */
+  private startWatchers(): void {
+    if (!this.watchEnabled || !this.indexer) return;
+    for (const watcher of this.watchers.values()) watcher.stop();
+    this.watchers.clear();
+    for (const collection of this.indexer.collections()) {
+      this.startWatcher(collection);
+    }
+  }
+
+  private startWatcher(collection: WatchedCollection): void {
+    const indexer = this.indexer!;
+    const watcher = new CollectionWatcher(collection, (flush) => indexer.applyFlush(collection, flush).then(() => {}), { log: this.log });
+    this.watchers.set(collection.name, watcher);
+    if (watcher.start()) this.log(`watching ${collection.name} at ${collection.path} (${collection.pattern})`);
+  }
+
+  /** What the MCP tools read to flag results that are still being indexed. */
+  private liveStatus(): LiveStatus {
+    return {
+      isPending: (collection, path) => this.watchers.get(collection)?.isPending(path) ?? false,
+      pendingCount: () => [...this.watchers.values()].reduce((n, w) => n + w.status().pending, 0),
+      report: () => this.statusReport(),
+    };
+  }
+
+  private statusReport(): DaemonStatusReport {
+    return {
+      pid: process.pid,
+      version: this.version,
+      dbPath: this.dbPath,
+      startedAt: this.startedAt,
+      clients: this.clients.size,
+      indexer: this.indexer?.state ?? { busy: null, lastReconcileAt: null, lastApplyAt: null, lastEmbedAt: null, lastError: null, queued: 0 },
+      watchers: this.watcherStatus(),
+      needsEmbedding: this.store?.internal.getHashesNeedingEmbedding() ?? 0,
+    };
+  }
+
+  /** Serve one control request, then close the connection. */
+  private async handleControl(socket: Socket, request: ControlRequest): Promise<void> {
+    const send = (event: ControlEvent): void => {
+      try { socket.write(encodeControl(event)); } catch { /* client gone */ }
+    };
+    const indexer = this.indexer;
+    const store = this.store;
+    socket.resume();
+    try {
+      if (!indexer || !store) throw new Error("the daemon is not ready");
+      switch (request.op) {
+        case "status":
+          send({ event: "done", op: "status", status: this.statusReport() });
+          break;
+        case "update": {
+          this.log(`control: update${request.collections ? ` ${request.collections.join(",")}` : ""}`);
+          const summary = await indexer.reconcileAll({
+            collections: request.collections,
+            onProgress: (progress) => send({ event: "progress", progress }),
+          });
+          send({ event: "done", op: "update", summary });
+          break;
+        }
+        case "embed": {
+          this.log(`control: embed${request.collection ? ` ${request.collection}` : ""}${request.force ? " --force" : ""}`);
+          if (request.force) {
+            await indexer.run("clear embeddings", async () => { store.internal.clearAllEmbeddings(); });
+          }
+          const result = await indexer.embedPending(request.collection, (progress) => send({ event: "embed-progress", progress }));
+          send({ event: "done", op: "embed", result });
+          break;
+        }
+        case "reload": {
+          this.log("control: reload config");
+          const outcome = await indexer.reloadConfig((progress) => send({ event: "progress", progress }));
+          this.startWatchers();
+          send({ event: "done", op: "reload", ...outcome });
+          break;
+        }
+        case "cleanup": {
+          this.log("control: cleanup");
+          const stats = await indexer.run("cleanup", async () => runCleanup(store.internal.db, {
+            onVectorRepack: () => send({ event: "log", message: "Repacking the vector table..." }),
+          }));
+          send({ event: "done", op: "cleanup", stats });
+          break;
+        }
+      }
+    } catch (err) {
+      send({ event: "error", message: err instanceof Error ? err.message : String(err) });
+    } finally {
+      socket.end();
+    }
   }
 
   private async cleanupFiles(): Promise<void> {

@@ -102,6 +102,7 @@ import {
   syncConfigToDb,
   type ReindexResult,
   type ChunkStrategy,
+  type CleanupStats,
 } from "../store.js";
 import {
   syncDocumentMetadata,
@@ -237,19 +238,135 @@ function getActiveIndexName(): string {
   return currentIndexName;
 }
 
+/** Either this process holds the writer lock, or the index daemon does and takes the write on our behalf. */
+type WriterAccess = { kind: "lock"; lock: WriterLockHandle } | { kind: "daemon" };
+
 /**
- * Take the index writer lock for a command that changes the index, or exit 1
- * naming the live holder. Released on process exit as well as by the caller,
- * since several writers end through process.exit on a failed step.
+ * Take the index writer lock for a command that changes the index. When the
+ * daemon for this index holds it, the command is delegated to the daemon
+ * instead; any other live holder is named and the command exits 1. The lock
+ * is released on process exit as well as by the caller, since several
+ * writers end through process.exit on a failed step.
  */
-function acquireWriterLockOrExit(mode: WriterMode): WriterLockHandle {
+function acquireWriterAccessOrExit(mode: WriterMode): WriterAccess {
   const lock = tryAcquireWriterLock(getDbPath(), mode);
   if (lock.kind === "taken") {
+    if (lock.holder?.mode === "daemon") return { kind: "daemon" };
     console.error(`${c.yellow}${writerLockHeldMessage(lock.holder, lock.lockPath)}${c.reset}`);
     process.exit(1);
   }
   process.once("exit", lock.release);
-  return lock;
+  return { kind: "lock", lock };
+}
+
+/** Print one collection's scan result the way `qmd update` always has. */
+function printReindexResult(result: ReindexResult): void {
+  console.log(`\nIndexed: ${result.indexed} new, ${result.updated} updated, ${result.unchanged} unchanged, ${result.removed} removed`);
+  reportSkippedReads(result.skippedFiles);
+  reportMetadataErrors(result.metadataErrors);
+  if (result.orphanedCleaned > 0) {
+    console.log(`Cleaned up ${result.orphanedCleaned} orphaned content hash(es)`);
+  }
+  console.log("");
+}
+
+/** The closing lines of `qmd update`, from either the local scan or the daemon's. */
+function printUpdateSummary(summary: { staleVectorsRemoved: number; vectorsCopied: number; needsEmbedding: number }): void {
+  console.log(`${c.green}✓ All collections updated.${c.reset}`);
+  if (summary.staleVectorsRemoved > 0) {
+    console.log(`Removed ${summary.staleVectorsRemoved} stale vector row(s)`);
+  }
+  if (summary.vectorsCopied > 0) {
+    console.log(`Copied ${summary.vectorsCopied} vector(s) into collections that gained already-embedded documents`);
+  }
+  if (summary.needsEmbedding > 0) {
+    console.log(`\nRun 'qmd embed' to update embeddings (${summary.needsEmbedding} unique hashes need vectors)`);
+  }
+}
+
+/**
+ * Run a collection's `update:` hook, when the config is trusted. Returns false
+ * when the collection must be skipped because its path is outside an untrusted
+ * project config. Exits on a failing hook, as `qmd update` always has.
+ */
+async function runCollectionUpdateHook(col: { name: string; pwd: string }, hooksAllowed: boolean): Promise<boolean> {
+  const configPath = getConfigPath();
+  const yamlCol = getCollectionFromYaml(col.name);
+  const rawPath = yamlCol?.path ?? col.pwd;
+  if (!hooksAllowed && isLocalConfigPath(configPath) && !isCollectionPathInsideProject(configPath, rawPath)) {
+    console.log(`${c.yellow}Skipping collection '${col.name}' — path ${rawPath} is outside this project and this .qmd config is not trusted.${c.reset}`);
+    console.log(`${c.dim}Approve with 'qmd trust'.${c.reset}\n`);
+    return false;
+  }
+  if (yamlCol?.update && hooksAllowed) {
+    console.log(`${c.dim}    Running update command: ${yamlCol.update}${c.reset}`);
+    try {
+      const proc = nodeSpawn("bash", ["-c", yamlCol.update], {
+        cwd: col.pwd,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+
+      const [output, errorOutput, exitCode] = await new Promise<[string, string, number]>((resolve, reject) => {
+        let out = "";
+        let err = "";
+        proc.stdout?.on("data", (d: Buffer) => { out += d.toString(); });
+        proc.stderr?.on("data", (d: Buffer) => { err += d.toString(); });
+        proc.on("error", reject);
+        proc.on("close", (code) => resolve([out, err, code ?? 1]));
+      });
+
+      if (output.trim()) {
+        console.log(output.trim().split('\n').map(l => `    ${l}`).join('\n'));
+      }
+      if (errorOutput.trim()) {
+        console.log(errorOutput.trim().split('\n').map(l => `    ${l}`).join('\n'));
+      }
+
+      if (exitCode !== 0) {
+        console.log(`${c.yellow}✗ Update command failed with exit code ${exitCode}${c.reset}`);
+        process.exit(exitCode);
+      }
+    } catch (err) {
+      console.log(`${c.yellow}✗ Update command failed: ${err}${c.reset}`);
+      process.exit(1);
+    }
+  }
+  return true;
+}
+
+/**
+ * `qmd update` while the index daemon holds the writer lock: the hooks run
+ * here, where the user's terminal and trust decision are, and the daemon
+ * rescans every collection and reports what changed.
+ */
+async function updateThroughDaemon(hooksAllowed: boolean): Promise<void> {
+  const collections = yamlListCollections();
+  if (collections.length === 0) {
+    console.log(`${c.dim}No collections found. Run 'qmd collection add .' to index markdown files.${c.reset}`);
+    return;
+  }
+  console.log(`${c.bold}Updating ${collections.length} collection(s) through the index daemon...${c.reset}\n`);
+  const skipped = new Set<string>();
+  for (const col of collections) {
+    if (!(await runCollectionUpdateHook({ name: col.name, pwd: col.path }, hooksAllowed))) skipped.add(col.name);
+  }
+  const chosen = collections.map(col => col.name).filter(name => !skipped.has(name));
+  const { requestFromDaemon } = await import("../daemon/control.js");
+  let shown = "";
+  const done = await requestFromDaemon(getDbPath(), { qmd_control: 1, op: "update", collections: chosen }, (event) => {
+    if (event.event === "progress" && event.progress.collection !== shown) {
+      shown = event.progress.collection;
+      console.log(`${c.cyan}[${event.progress.index}/${event.progress.total}]${c.reset} ${c.bold}${shown}${c.reset}`);
+    } else if (event.event === "progress" && event.progress.current !== undefined && isTTY) {
+      process.stderr.write(`\rIndexing: ${event.progress.current}/${event.progress.fileTotal}        `);
+    }
+  });
+  if (done.op !== "update") throw new Error("unexpected daemon reply");
+  for (const col of done.summary.collectionsReindexed) {
+    console.log(`Collection: ${col.path} (${col.pattern})`);
+    printReindexResult(col.result);
+  }
+  printUpdateSummary(done.summary);
 }
 
 function mcpDaemonPaths(): { cacheDir: string; pidPath: string; logPath: string } {
@@ -601,8 +718,11 @@ async function showStatus(): Promise<void> {
     console.log(`Writer: ${c.yellow}${writer.mode}${c.reset} (PID ${writer.pid})`);
   }
   const { describeIndexDaemon } = await import("../daemon/control.js");
-  const daemonLine = await describeIndexDaemon(dbPath);
-  if (daemonLine) console.log(`Daemon: ${daemonLine}`);
+  const daemonLines = await describeIndexDaemon(dbPath);
+  if (daemonLines) {
+    console.log(`Daemon: ${c.green}${daemonLines[0]}${c.reset}`);
+    for (const line of daemonLines.slice(1)) console.log(`        ${line}`);
+  }
   console.log("");
 
   const orphanedVectors = countOrphanedVectors(db);
@@ -954,7 +1074,11 @@ function manageTrust(subcommand?: string): void {
 async function updateCollections(): Promise<void> {
   // Prompt before opening the store so an approval is visible to getStore (#889).
   const allowed = await resolveLocalConfigTrust();
-  const writerLock = acquireWriterLockOrExit("update");
+  const access = acquireWriterAccessOrExit("update");
+  if (access.kind === "daemon") {
+    await updateThroughDaemon(allowed);
+    return;
+  }
 
   const db = getDb();
   const storeInstance = getStore();
@@ -975,7 +1099,6 @@ async function updateCollections(): Promise<void> {
   // hooks, out-of-project collection paths, and custom model URIs are somebody
   // else's choices until the user says otherwise (#886, #889).
   const hooksAllowed = allowed;
-  const configPath = getConfigPath();
 
   console.log(`${c.bold}Updating ${collections.length} collection(s)...${c.reset}\n`);
 
@@ -984,47 +1107,8 @@ async function updateCollections(): Promise<void> {
     if (!col) continue;
     console.log(`${c.cyan}[${i + 1}/${collections.length}]${c.reset} ${c.bold}${col.name}${c.reset} ${c.dim}(${col.glob_pattern})${c.reset}`);
 
-    // Execute custom update command if specified in YAML
+    if (!(await runCollectionUpdateHook(col, hooksAllowed))) continue;
     const yamlCol = getCollectionFromYaml(col.name);
-    const rawPath = yamlCol?.path ?? col.pwd;
-    if (!hooksAllowed && isLocalConfigPath(configPath) && !isCollectionPathInsideProject(configPath, rawPath)) {
-      console.log(`${c.yellow}Skipping collection '${col.name}' — path ${rawPath} is outside this project and this .qmd config is not trusted.${c.reset}`);
-      console.log(`${c.dim}Approve with 'qmd trust'.${c.reset}\n`);
-      continue;
-    }
-    if (yamlCol?.update && hooksAllowed) {
-      console.log(`${c.dim}    Running update command: ${yamlCol.update}${c.reset}`);
-      try {
-        const proc = nodeSpawn("bash", ["-c", yamlCol.update], {
-          cwd: col.pwd,
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-
-        const [output, errorOutput, exitCode] = await new Promise<[string, string, number]>((resolve, reject) => {
-          let out = "";
-          let err = "";
-          proc.stdout?.on("data", (d: Buffer) => { out += d.toString(); });
-          proc.stderr?.on("data", (d: Buffer) => { err += d.toString(); });
-          proc.on("error", reject);
-          proc.on("close", (code) => resolve([out, err, code ?? 1]));
-        });
-
-        if (output.trim()) {
-          console.log(output.trim().split('\n').map(l => `    ${l}`).join('\n'));
-        }
-        if (errorOutput.trim()) {
-          console.log(errorOutput.trim().split('\n').map(l => `    ${l}`).join('\n'));
-        }
-
-        if (exitCode !== 0) {
-          console.log(`${c.yellow}✗ Update command failed with exit code ${exitCode}${c.reset}`);
-          process.exit(exitCode);
-        }
-      } catch (err) {
-        console.log(`${c.yellow}✗ Update command failed: ${err}${c.reset}`);
-        process.exit(1);
-      }
-    }
 
     const startTime = Date.now();
     console.log(`Collection: ${col.pwd} (${col.glob_pattern})`);
@@ -1043,13 +1127,7 @@ async function updateCollections(): Promise<void> {
     });
 
     progress.clear();
-    console.log(`\nIndexed: ${result.indexed} new, ${result.updated} updated, ${result.unchanged} unchanged, ${result.removed} removed`);
-    reportSkippedReads(result.skippedFiles);
-    reportMetadataErrors(result.metadataErrors);
-    if (result.orphanedCleaned > 0) {
-      console.log(`Cleaned up ${result.orphanedCleaned} orphaned content hash(es)`);
-    }
-    console.log("");
+    printReindexResult(result);
   }
 
   // The pending count below only sees content_vectors, so a hash that joined
@@ -1067,18 +1145,9 @@ async function updateCollections(): Promise<void> {
   // Check if any documents need embedding (show once at end)
   const needsEmbedding = getHashesNeedingEmbedding(db);
   closeDb();
-  writerLock.release();
+  access.lock.release();
 
-  console.log(`${c.green}✓ All collections updated.${c.reset}`);
-  if (staleVectors > 0) {
-    console.log(`Removed ${staleVectors} stale vector row(s)`);
-  }
-  if (copiedVectors > 0) {
-    console.log(`Copied ${copiedVectors} vector(s) into collections that gained already-embedded documents`);
-  }
-  if (needsEmbedding > 0) {
-    console.log(`\nRun 'qmd embed' to update embeddings (${needsEmbedding} unique hashes need vectors)`);
-  }
+  printUpdateSummary({ staleVectorsRemoved: staleVectors, vectorsCopied: copiedVectors, needsEmbedding });
 }
 
 /**
@@ -1942,24 +2011,48 @@ async function collectionAdd(pwd: string, globPattern: string, name?: string): P
     process.exit(1);
   }
 
-  const writerLock = acquireWriterLockOrExit("collection");
+  const access = acquireWriterAccessOrExit("collection");
 
   // Add to YAML config + sync to SQLite
   const { addCollection } = await import("../collections.js");
   addCollection(collName, pwd, globPattern);
   // The user just typed this path, so it needs no separate approval (#889).
   trustCurrentConfig();
+
+  if (access.kind === "daemon") {
+    // The daemon owns the index: it picks up the new YAML entry and scans it.
+    console.log(`Creating collection '${collName}' through the index daemon...`);
+    const outcome = await reloadDaemonConfig();
+    const scanned = outcome.summary?.collectionsReindexed.find(col => col.name === collName);
+    if (scanned) printReindexResult(scanned.result);
+    console.log(`${c.green}✓${c.reset} Collection '${collName}' created successfully`);
+    return;
+  }
   resyncConfig();
 
   // Create the collection and index files
   console.log(`Creating collection '${collName}'...`);
   const newColl = getCollectionFromYaml(collName);
   await indexFiles(pwd, globPattern, collName, false, newColl?.ignore);
-  writerLock.release();
+  access.lock.release();
   console.log(`${c.green}✓${c.reset} Collection '${collName}' created successfully`);
 }
 
-function collectionRemove(name: string): void {
+/** Ask the daemon to re-read the YAML config after a collection change. */
+async function reloadDaemonConfig() {
+  const { requestFromDaemon } = await import("../daemon/control.js");
+  let shown = "";
+  const done = await requestFromDaemon(getDbPath(), { qmd_control: 1, op: "reload" }, (event) => {
+    if (event.event === "progress" && event.progress.collection !== shown) {
+      shown = event.progress.collection;
+      console.log(`${c.dim}Indexing ${shown}...${c.reset}`);
+    }
+  });
+  if (done.op !== "reload") throw new Error("unexpected daemon reply");
+  return done;
+}
+
+async function collectionRemove(name: string): Promise<void> {
   // Check if collection exists in YAML
   const coll = getCollectionFromYaml(name);
   if (!coll) {
@@ -1968,13 +2061,20 @@ function collectionRemove(name: string): void {
     process.exit(1);
   }
 
-  const writerLock = acquireWriterLockOrExit("collection");
+  const access = acquireWriterAccessOrExit("collection");
+  if (access.kind === "daemon") {
+    yamlRemoveCollectionFn(name);
+    const outcome = await reloadDaemonConfig();
+    console.log(`${c.green}✓${c.reset} Removed collection '${name}'`);
+    console.log(`  Deleted ${outcome.removedDocuments[name] ?? 0} documents`);
+    return;
+  }
   const db = getDb();
   const result = removeCollection(db, name);
   // Also remove from YAML config
   yamlRemoveCollectionFn(name);
   closeDb();
-  writerLock.release();
+  access.lock.release();
 
   console.log(`${c.green}✓${c.reset} Removed collection '${name}'`);
   console.log(`  Deleted ${result.deletedDocs} documents`);
@@ -1983,7 +2083,7 @@ function collectionRemove(name: string): void {
   }
 }
 
-function collectionRename(oldName: string, newName: string): void {
+async function collectionRename(oldName: string, newName: string): Promise<void> {
   // Check if old collection exists in YAML
   const coll = getCollectionFromYaml(oldName);
   if (!coll) {
@@ -2000,13 +2100,22 @@ function collectionRename(oldName: string, newName: string): void {
     process.exit(1);
   }
 
-  const writerLock = acquireWriterLockOrExit("collection");
+  const access = acquireWriterAccessOrExit("collection");
+  if (access.kind === "daemon") {
+    // The daemon sees a removed and an added collection; the new name is
+    // scanned first so already-embedded content keeps its vectors.
+    yamlRenameCollectionFn(oldName, newName);
+    await reloadDaemonConfig();
+    console.log(`${c.green}✓${c.reset} Renamed collection '${oldName}' to '${newName}'`);
+    console.log(`  Virtual paths updated: ${c.cyan}qmd://${oldName}/${c.reset} → ${c.cyan}qmd://${newName}/${c.reset}`);
+    return;
+  }
   const db = getDb();
   renameCollection(db, oldName, newName);
   // Also rename in YAML config
   yamlRenameCollectionFn(oldName, newName);
   closeDb();
-  writerLock.release();
+  access.lock.release();
 
   console.log(`${c.green}✓${c.reset} Renamed collection '${oldName}' to '${newName}'`);
   console.log(`  Virtual paths updated: ${c.cyan}qmd://${oldName}/${c.reset} → ${c.cyan}qmd://${newName}/${c.reset}`);
@@ -2429,6 +2538,30 @@ function resolveModelsForRuntime(): { embed: string; generate: string; rerank: s
   return resolveModels();
 }
 
+/** `qmd embed` while the index daemon holds the writer lock: the daemon embeds and streams its progress. */
+async function embedThroughDaemon(model: string, force: boolean, collection?: string): Promise<void> {
+  const { requestFromDaemon } = await import("../daemon/control.js");
+  console.log(`${c.dim}Embedding through the index daemon. Model: ${shortModelName(model)}${c.reset}\n`);
+  if (force) console.log(`${c.yellow}Force re-indexing: clearing all vectors...${c.reset}`);
+  const startTime = Date.now();
+  const done = await requestFromDaemon(getDbPath(), { qmd_control: 1, op: "embed", collection, force }, (event) => {
+    if (event.event !== "embed-progress" || event.progress.totalBytes === 0 || !isTTY) return;
+    const percent = Math.min(100, (event.progress.bytesProcessed / event.progress.totalBytes) * 100);
+    process.stderr.write(`\r${c.cyan}${renderProgressBar(percent)}${c.reset} ${c.bold}${percent.toFixed(0).padStart(3)}% input${c.reset} ${c.dim}${formatCount(event.progress.chunksEmbedded)} chunks${c.reset}   `);
+  });
+  if (done.op !== "embed") throw new Error("unexpected daemon reply");
+  if (isTTY) process.stderr.write("\n");
+  const result = done.result;
+  if (!result || (result.chunksEmbedded === 0 && result.docsProcessed === 0)) {
+    console.log(`${c.green}✓ All content hashes already have embeddings.${c.reset}`);
+    return;
+  }
+  console.log(`${c.green}✓ Done!${c.reset} Embedded ${c.bold}${result.chunksEmbedded}${c.reset} chunks from ${c.bold}${result.docsProcessed}${c.reset} documents in ${c.bold}${formatETA((Date.now() - startTime) / 1000)}${c.reset}`);
+  if (result.errors > 0) {
+    console.log(`${c.yellow}⚠ ${formatCount(result.errors)} chunks still failed after retries${c.reset}`);
+  }
+}
+
 async function vectorIndex(
   model: string = resolveEmbedModelForCli(),
   force: boolean = false,
@@ -2444,6 +2577,11 @@ async function vectorIndex(
     if (embedLock.holder?.mode === "embed") {
       console.log(EMBED_LOCK_BUSY_MESSAGE);
       closeDb();
+      return;
+    }
+    if (embedLock.holder?.mode === "daemon") {
+      closeDb();
+      await embedThroughDaemon(model, force, batchOptions?.collection);
       return;
     }
     console.error(`${c.yellow}${writerLockHeldMessage(embedLock.holder, embedLock.lockPath)}${c.reset}`);
@@ -4842,7 +4980,7 @@ if (isMain) {
             console.error("  Use 'qmd collection list' to see available collections");
             process.exit(1);
           }
-          collectionRemove(cli.args[1]);
+          await collectionRemove(cli.args[1]);
           break;
         }
 
@@ -4853,7 +4991,7 @@ if (isMain) {
             console.error("  Use 'qmd collection list' to see available collections");
             process.exit(1);
           }
-          collectionRename(cli.args[1], cli.args[2]);
+          await collectionRename(cli.args[1], cli.args[2]);
           break;
         }
 
@@ -5334,11 +5472,22 @@ if (isMain) {
         break;
       }
 
-      const writerLock = acquireWriterLockOrExit("cleanup");
-      const stats = runCleanup(db, {
-        onVectorRepack: (layout) => console.log(`Repacking the vector table (${describeVectorLayout(layout)})...`),
-      });
-      writerLock.release();
+      const access = acquireWriterAccessOrExit("cleanup");
+      let stats: CleanupStats;
+      if (access.kind === "daemon") {
+        closeDb();
+        const { requestFromDaemon } = await import("../daemon/control.js");
+        const done = await requestFromDaemon(getDbPath(), { qmd_control: 1, op: "cleanup" }, (event) => {
+          if (event.event === "log") console.log(event.message);
+        });
+        if (done.op !== "cleanup") throw new Error("unexpected daemon reply");
+        stats = done.stats;
+      } else {
+        stats = runCleanup(db, {
+          onVectorRepack: (layout) => console.log(`Repacking the vector table (${describeVectorLayout(layout)})...`),
+        });
+        access.lock.release();
+      }
       console.log(`${c.green}✓${c.reset} Cleared ${stats.cacheCount} cached API responses`);
       if (stats.orphanedVectors > 0) {
         console.log(`${c.green}✓${c.reset} Removed ${stats.orphanedVectors} orphaned embedding chunks`);
@@ -5358,7 +5507,7 @@ if (isMain) {
       }
       console.log(`${c.green}✓${c.reset} FTS compacted, database vacuumed`);
 
-      closeDb();
+      if (access.kind === "lock") closeDb();
       break;
     }
 

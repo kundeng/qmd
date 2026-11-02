@@ -49,6 +49,9 @@ QMD speaks MCP **2026-07-28** (SDK 2.x) and dual-speaks 2025-era stdio clients.
   processes for one index share a detached daemon that holds the index and
   the models and exits five minutes after its last client. `qmd status`
   shows it, `qmd mcp stop` stops it, `QMD_NO_DAEMON=1` serves in-process.
+  The daemon watches every collection directory and re-indexes changed
+  files within seconds; `query` results for a file still being indexed are
+  marked `[stale]`, so there is no need to run `qmd update` by hand.
 - **HTTP** (`qmd mcp --http`): sessionless Streamable HTTP. No
   `Mcp-Session-Id`, no handshake. Each POST is independent. 2026 clients
   MUST send `MCP-Protocol-Version`, `Mcp-Method`, and (for `tools/call`)

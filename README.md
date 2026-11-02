@@ -146,8 +146,30 @@ qmd mcp stop                      # stop the daemon for this index (clients reco
 
 The daemon's socket, pid file and log live under `~/.cache/qmd/run/<index key>/`
 (`$XDG_CACHE_HOME/qmd/run/...` when set). A `--index <name>` or a project-local
-`.qmd/` index gets its own daemon. While the daemon runs it holds the index
-writer lock, so `qmd update` and `qmd embed` report it as the writer.
+`.qmd/` index gets its own daemon.
+
+#### Live indexing
+
+While it runs, the daemon watches every collection's directory with native
+file events and re-indexes a saved, renamed or deleted file about two seconds
+after the change (300 ms for a single file), then embeds the new content. A
+new directory or a burst of changes triggers a full scan of that collection,
+and so does every daemon start, so edits made while no daemon ran are caught
+up. Nothing polls: an idle daemon uses no CPU.
+
+Results for a file that changed and is not re-indexed yet are marked `[stale]`
+(`stale: true` in the structured result), and the `status` tool shows
+`Live indexing: on` with the number of pending changes.
+
+The daemon holds the index writer lock, so `qmd update`, `qmd embed`,
+`qmd cleanup` and `qmd collection add|remove|rename` hand their work to it
+while it runs: the command prints the same summary, the daemon does the writes.
+
+| Variable | Effect |
+|----------|--------|
+| `QMD_NO_WATCH=1` | Run the daemon without file watchers; `qmd update` still works through it. |
+| `QMD_WATCH_DEBOUNCE_MS` | Quiet window after the last change before re-indexing (default 2000). |
+| `QMD_DAEMON_EMBED=0` | Do not embed after changes; run `qmd embed` yourself. |
 
 | Variable | Effect |
 |----------|--------|
