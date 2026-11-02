@@ -1,7 +1,7 @@
 ---
 spec_id: 01-writer-lock
-status: DRAFT
-closed_as: null
+status: CLOSED
+closed_as: SHIPPED
 since: 2026-11-02
 until: null
 epic: live-index
@@ -133,11 +133,11 @@ sequenceDiagram
 # Tasks
 
 ## Tasks
-- [ ] 1. Foundation
+- [x] 1. Foundation
   - [ ] 1.1 `src/daemon/lock.ts` with atomic acquire, stale clear, liveness
     - Requirements: R3, R4
     - Verification: `test/writer-lock.test.ts` lock cases
-- [ ] 2. Core
+- [x] 2. Core
   - [ ] 2.1 `src/daemon/writer-lock.ts`; delete `embed-lock.ts`; `embed` uses it
     - Depends: 1.1
     - Requirements: R1, R2
@@ -148,11 +148,12 @@ sequenceDiagram
     - Verification: `test/cli.test.ts` new cases
   - [ ] 2.3 `qmd status` shows the writer
     - Requirements: R5
-- [ ] 3. Tests
+- [x] 3. Tests
   - [ ] 3.1 Cross-process race: two children acquire at once, exactly one wins
     - Requirements: R4
-- [ ] 4. Polish And Docs
+- [x] 4. Polish And Docs
   - [ ] 4.1 CHANGELOG entry; README mention under `qmd update`
 
 ## Log
 - 2026-11-02: spec written from `src/cli/embed-lock.ts`, `src/cli/qmd.ts` writer paths and codegraph `writer-lock.js`.
+- 2026-11-02: shipped on branch `live/01-writer-lock`, one commit. Evidence: `test/writer-lock.test.ts` 15 tests and `test/cli.test.ts` 175 tests pass under vitest on Node 24.12.0; `test/cli.test.ts` + `test/writer-lock.test.ts` 190 pass under bun 1.3.6; `bun run test:types` and `bun run lint` clean. Deviation from the plan: the pid in the holder message is asserted for liveness, not equality, because tsx runs the test helper in a grandchild process. Task 2.2 covers `collection add/remove/rename` and `cleanup`; the dry-run cleanup path reads only and takes no lock.
