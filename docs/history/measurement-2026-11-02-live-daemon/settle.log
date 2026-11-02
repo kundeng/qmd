@@ -1,0 +1,9 @@
+# settle run 2026-11-02T04:41:38.161Z
+[daemon alone, right after the bench] 2 processes, RSS total 10134 MB: 39647(daemon)=10132MB 42096=2MB
+[3 idle sessions, models still loaded] 5 processes, RSS total 10326 MB: 39647(daemon)=10132MB 42096=2MB 42100=64MB 42101=64MB 42102=64MB
+idle CPU, minute 1 (models loaded, nothing to index): 0.00 CPU-s = 0.00% of a core
+[after 5+ minutes without a query (models unloaded?)] 5 processes, RSS total 10386 MB: 39647(daemon)=10191MB 42096=2MB 42100=64MB 42101=64MB 42102=64MB
+idle CPU, minute 6: 0.01 CPU-s = 0.02% of a core
+[end] 5 processes, RSS total 10386 MB: 39647(daemon)=10191MB 42096=2MB 42100=64MB 42101=64MB 42102=64MB
+[after sessions closed (daemon lingers up to 300 s)] 2 processes, RSS total 10194 MB: 39647(daemon)=10191MB 42096=2MB
+done

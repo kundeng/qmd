@@ -29,11 +29,33 @@ Each code branch carries its CHANGELOG lines and README text. Each spec's Log na
 
 ## Measurements
 
-MEASUREMENTS_PLACEHOLDER
+Full record with method, raw logs and the rerunnable scripts: `docs/history/measurement-2026-11-02-live-daemon/README.md`. Data: inventory-catalog, 99 Markdown files and 188 code files in two collections; three MCP sessions driven by a script; stock `@tobilu/qmd` 2.8.3 versus `live/main` (35e1a86), both run as `node <entry> mcp`.
+
+| Measure | Stock 2.8.3 | Fork |
+|---|---|---|
+| Processes for three sessions | 3 servers (28 on the real machine before this work) | 1 daemon + 3 proxies of 64 MB |
+| RSS, three sessions, no model loaded | 304 MB | 65 MB per proxy; daemon as below |
+| RSS after a full query | 6.3 GB per session that queried | 10.1 GB in the daemon, shared by every session; not released after the 5-minute model timeout |
+| Idle CPU over 60 s | 0.00 CPU-s | 0.00 CPU-s (0.01 in a later minute) |
+| Keyword query, warm | 24 to 43 ms | 10 to 17 ms |
+| Full query (expand + rerank), warm | 400 to 555 ms | 85 to 112 ms |
+| Full query, first (model load) | 29 s | 17 s |
+| Save → keyword-searchable | never, until `qmd update` (485 ms) | 449 ms |
+| Save → embedded | after `qmd embed` (28 s for one file, model load dominated) | 640 ms with the model warm |
+| Full embed of 2,176 chunks, cold | 90 s | 116 s (same code; GPU shared with the lingering stock run) |
+| Sessions close | each server exits | proxies exit; the daemon lingers 300 s then exits |
+
+Earlier baseline from the machine itself, before any change: 28 stock servers alive from Claude sessions, 56 processes, 3,412 MB RSS (`baseline-stock-processes.txt`).
 
 ## Open questions and follow-ups
 
-OPEN_PLACEHOLDER
+1. **Daemon memory after queries.** The daemon holds about 10 GB resident once it has answered a full query and embedded, and the five-minute model inactivity timeout does not bring it down (`settle.log`). Stock has the same per-session behaviour at about 6 GB. Candidates: dispose models (not only contexts) on inactivity in the daemon, and size the embedding context pool for the one-document batches live embedding produces. Technical, reversible; I would do it next.
+2. **Project config portability.** `qmd init` writes absolute collection paths, as `collection add` does, because the scanner resolves only absolute paths (the trust check resolves relative ones). A `.qmd/index.yml` cloned to another machine names the wrong root. Making the scanner resolve relative paths against the project is a small upstream change worth its own PR.
+3. **Daemon per project versus per machine.** Each project index gets its own daemon and, while embedding, its own copy of the embedding model. With two or three projects open at once that is 2 to 3 daemons. The design keeps one writer per database; a per-machine daemon serving several indexes would share models at the cost of routing sessions by index inside one process. Decided per index for now (`docs/decisions/2026-11-02-01-daemon-unit.md`); revisit if the owner runs many projects at once.
+4. **Two bun test failures** (`store.test.ts` 16 MiB budget, `doctor-vector-sampling.test.ts` 32 MiB budget) fail identically on untouched upstream main on this machine. Not ours; worth an upstream issue with the bun version.
+5. **Upstream PRs.** Four branches are ready in order. Opening them on `tobi/qmd` is the owner's call (`docs/decisions/2026-11-02-05-pr-split.md`); the docs branch stays on the fork.
+6. **Runtime for the registered server.** The fork's `bin/qmd` picks bun when `bun.lock` and bun are present, so the daemon the registration command below starts runs under bun (87 MB RSS at start in a check), while the benchmark ran under Node. Both pass the suite; the choice is upstream's launcher logic.
+7. **Upgrades.** A proxy whose version differs from the running daemon serves in-process and the old daemon exits on idle. After installing a new build, `qmd mcp stop` ends the old daemon at once.
 
 ## How to use the fork now
 

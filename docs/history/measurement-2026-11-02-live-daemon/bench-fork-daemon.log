@@ -1,0 +1,22 @@
+2026-11-02T04:38:54.706Z daemon listening on /Users/kundeng/.local/share/qmd-bench/out/fork/cache/qmd/run/ceaee1049df95d15/daemon.sock (pid 39647, qmd 2.8.3, index /Users/kundeng/.local/share/qmd-bench/out/fork/cache/qmd/index.sqlite); idle exit after 300000 ms
+2026-11-02T04:38:54.709Z watching inv-docs at /Users/kundeng/Dropbox/Projects/inventory-catalog/docs (**/*.md)
+2026-11-02T04:38:54.709Z watching inv-code at /Users/kundeng/Dropbox/Projects/inventory-catalog (**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,rs})
+2026-11-02T04:38:54.715Z client connected (pid 39646, host 38193); clients=1
+2026-11-02T04:38:54.926Z reconcile: 2 collection(s), 2 new, 11 updated, 274 unchanged, 2 removed in 217 ms
+2026-11-02T04:38:55.059Z client connected (pid 39648, host 38193); clients=2
+2026-11-02T04:38:55.257Z client connected (pid 39650, host 38193); clients=3
+2026-11-02T04:39:26.327Z embed: 793 chunk(s) from 13 document(s), 0 error(s) in 31400 ms
+2026-11-02T04:39:26.335Z apply inv-docs: 1 path(s): 0 new, 1 updated, 0 unchanged, 0 removed, 2 stale vector row(s) in 7 ms
+2026-11-02T04:39:26.346Z apply inv-code: 1 path(s): 0 new, 1 updated, 0 unchanged, 0 removed, 8 stale vector row(s) in 11 ms
+2026-11-02T04:39:26.484Z embed inv-docs: 2 chunk(s) from 1 document(s), 0 error(s) in 136 ms
+2026-11-02T04:39:26.848Z embed inv-code: 8 chunk(s) from 1 document(s), 0 error(s) in 361 ms
+2026-11-02T04:40:16.471Z apply inv-docs: 1 path(s): 1 new, 0 updated, 0 unchanged, 0 removed in 3 ms
+2026-11-02T04:40:16.493Z embed inv-docs: 1 chunk(s) from 1 document(s), 0 error(s) in 21 ms
+2026-11-02T04:40:17.008Z apply inv-docs: 1 path(s): 0 new, 0 updated, 0 unchanged, 1 removed, 1 stale vector row(s) in 5 ms
+2026-11-02T04:40:17.009Z apply inv-code: 0 path(s): 0 new, 0 updated, 0 unchanged, 0 removed in 1 ms
+2026-11-02T04:40:18.292Z client left (socket closed); clients=2
+2026-11-02T04:40:18.293Z client left (socket closed); clients=1
+2026-11-02T04:40:18.293Z client left (socket closed); clients=0
+2026-11-02T04:41:38.324Z client connected (pid 42101, host 42098); clients=1
+2026-11-02T04:41:38.328Z client connected (pid 42100, host 42098); clients=2
+2026-11-02T04:41:38.330Z client connected (pid 42102, host 42098); clients=3

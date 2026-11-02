@@ -1,0 +1,37 @@
+# stock: entry=/Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js live=false at 2026-11-02T04:32:49.558Z node v24.12.0
+qmd --version: qmd 2.8.3 (facd35e)
+collection add inv-docs: 482 ms (exit 0) Indexed: 99 new, 0 updated, 0 unchanged, 0 removed
+collection add inv-code: 737 ms (exit 0) Indexed: 188 new, 0 updated, 0 unchanged, 0 removed
+embed: 89887 ms (exit 0) Embedded 2176 chunks from 286 documents in 1m 30s
+Index: /Users/kundeng/.local/share/qmd-bench/out/stock/cache/qmd/index.sqlite
+  Total:    287 files indexed
+  Vectors:  2176 embedded
+session 1 ready at +216 ms
+session 2 ready at +380 ms
+session 3 ready at +539 ms
+[3 sessions idle] 3 qmd processes, RSS total 304 MB
+   35886 34351 104032 0 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@to
+   35887 34351 103392 0 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@to
+   35888 34351 103664 0 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@to
+idle CPU over 60 s: 0.00 CPU-seconds across all qmd processes (0.00% of one core)
+lex "simulation events" run 1: 41 ms, 5 results
+lex "simulation events" run 2: 29 ms, 5 results
+lex "simulation events" run 3: 24 ms, 5 results
+lex "inventory catalog site" run 1: 43 ms, 5 results
+lex "inventory catalog site" run 2: 39 ms, 5 results
+lex "inventory catalog site" run 3: 36 ms, 5 results
+query "how are simulated events generated for the catalog" run 1: 29008 ms, 5 results
+query "how are simulated events generated for the catalog" run 2: 555 ms, 5 results
+query "how are simulated events generated for the catalog" run 3: 397 ms, 5 results
+[after queries (models loaded)] 3 qmd processes, RSS total 6281 MB
+   35886 34351 6224800 92.8 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules
+   35887 34351 103392 0 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@to
+   35888 34351 103664 0 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@to
+stock: file is not searchable until qmd update runs; qmd update took 485 ms (exit 0)
+stock: qmd embed for the new file took 28415 ms (exit 0)
+stock: after update, session finds the file: true
+[end] 3 qmd processes, RSS total 6262 MB
+   35886 34351 6224832 0 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@t
+   35887 34351 93696 0 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tob
+   35888 34351 93824 0 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tob
+done

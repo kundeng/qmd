@@ -1,0 +1,40 @@
+# fork: entry=/Users/kundeng/.local/share/project-git/qmd-worktrees/live/dist/cli/qmd.js live=true at 2026-11-02T04:36:57.350Z node v24.12.0
+qmd --version: qmd 2.8.3 (35e1a86)
+collection add inv-docs: 281 ms (exit 0) Indexed: 99 new, 0 updated, 0 unchanged, 0 removed
+collection add inv-code: 443 ms (exit 0) Indexed: 188 new, 0 updated, 0 unchanged, 0 removed
+embed: 116127 ms (exit 0) Embedded 2176 chunks from 286 documents in 1m 56s
+Index: /Users/kundeng/.local/share/qmd-bench/out/fork/cache/qmd/index.sqlite
+  Total:    287 files indexed
+  Vectors:  2176 embedded
+session 1 ready at +287 ms
+session 2 ready at +594 ms
+session 3 ready at +791 ms
+[3 sessions idle] 4 qmd processes, RSS total 5426 MB
+   39646 38193 65632 0 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/project-git/qmd-worktrees/live/dist/cli/qmd.js m
+   39647 39646 5359504 33.5 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/project-git/qmd-worktrees/live/dist/cli/qmd
+   39648 38193 65360 0 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/project-git/qmd-worktrees/live/dist/cli/qmd.js m
+   39650 38193 65520 0 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/project-git/qmd-worktrees/live/dist/cli/qmd.js m
+idle CPU over 60 s: 10.98 CPU-seconds across all qmd processes (18.30% of one core)
+lex "simulation events" run 1: 17 ms, 5 results
+lex "simulation events" run 2: 11 ms, 5 results
+lex "simulation events" run 3: 10 ms, 5 results
+lex "inventory catalog site" run 1: 10 ms, 5 results
+lex "inventory catalog site" run 2: 12 ms, 5 results
+lex "inventory catalog site" run 3: 12 ms, 5 results
+query "how are simulated events generated for the catalog" run 1: 16756 ms, 5 results
+query "how are simulated events generated for the catalog" run 2: 112 ms, 5 results
+query "how are simulated events generated for the catalog" run 3: 85 ms, 5 results
+[after queries (models loaded)] 4 qmd processes, RSS total 10324 MB
+   39646 38193 65728 0.1 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/project-git/qmd-worktrees/live/dist/cli/qmd.js
+   39647 39646 10374832 44 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/project-git/qmd-worktrees/live/dist/cli/qmd.
+   39648 38193 65392 0 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/project-git/qmd-worktrees/live/dist/cli/qmd.js m
+   39650 38193 65584 0 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/project-git/qmd-worktrees/live/dist/cli/qmd.js m
+save → keyword-searchable (live): 449 ms
+save → embedded (live, status shows no pending): 640 ms after save
+[end] 4 qmd processes, RSS total 10324 MB
+   39646 38193 65776 0 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/project-git/qmd-worktrees/live/dist/cli/qmd.js m
+   39647 39646 10375008 0 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/project-git/qmd-worktrees/live/dist/cli/qmd.j
+   39648 38193 65392 0 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/project-git/qmd-worktrees/live/dist/cli/qmd.js m
+   39650 38193 65584 0 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/project-git/qmd-worktrees/live/dist/cli/qmd.js m
+after sessions closed: 0 qmd processes remain (daemon lingers 300000 ms)
+done
