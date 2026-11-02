@@ -1,3 +1,6 @@
+// First import on purpose: the proxy's parent watchdog needs the parent pid
+// captured before any module that can yield.
+import "../daemon/early-ppid.js";
 import { isBun, openDatabase } from "../db.js";
 import type { Database, SQLiteValue } from "../db.js";
 import fastGlob from "fast-glob";
@@ -597,6 +600,9 @@ async function showStatus(): Promise<void> {
   if (writer && isLiveWriterLockHolder(writer.pid)) {
     console.log(`Writer: ${c.yellow}${writer.mode}${c.reset} (PID ${writer.pid})`);
   }
+  const { describeIndexDaemon } = await import("../daemon/control.js");
+  const daemonLine = await describeIndexDaemon(dbPath);
+  if (daemonLine) console.log(`Daemon: ${daemonLine}`);
   console.log("");
 
   const orphanedVectors = countOrphanedVectors(db);
@@ -5117,6 +5123,12 @@ if (isMain) {
 
       // Subcommands take priority over flags
       if (sub === "stop") {
+        const { stopIndexDaemon } = await import("../daemon/control.js");
+        const stopped = await stopIndexDaemon(getDbPath());
+        if (stopped.outcome !== "no-daemon") {
+          console.log(stopped.message);
+          process.exit(0);
+        }
         if (!existsSync(pidPath)) {
           console.log("Not running (no PID file).");
           process.exit(0);
@@ -5208,10 +5220,28 @@ if (isMain) {
           }
           throw e;
         }
+      } else if (process.env.QMD_DAEMON_INTERNAL === "1") {
+        // This process is the detached index daemon the launcher below spawned.
+        // The top-level handlers would process.exit before the daemon's own
+        // graceful stop could run.
+        process.removeAllListeners("SIGTERM");
+        process.removeAllListeners("SIGINT");
+        const { runIndexDaemon } = await import("../daemon/daemon.js");
+        process.exitCode = await runIndexDaemon(getDbPath());
       } else {
-        // Default: stdio transport
-        const { startMcpServer } = await import("../mcp/server.js");
-        await startMcpServer({ dbPath: getDbPath() });
+        // Default: stdio, through the shared daemon for this index when it is
+        // available or can be started, otherwise in-process (QMD_NO_DAEMON=1
+        // always serves in-process).
+        const { startMcpStdio } = await import("../daemon/launch.js");
+        await startMcpStdio({
+          dbPath: getDbPath(),
+          cliEntry: fileURLToPath(import.meta.url),
+          cliArgs: cli.values.index ? ["--index", String(cli.values.index)] : [],
+          inProcess: async () => {
+            const { startMcpServer } = await import("../mcp/server.js");
+            await startMcpServer({ dbPath: getDbPath() });
+          },
+        });
       }
       break;
     }

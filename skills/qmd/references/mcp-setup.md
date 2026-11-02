@@ -45,7 +45,10 @@ QMD speaks MCP **2026-07-28** (SDK 2.x) and dual-speaks 2025-era stdio clients.
 
 - **stdio** (`qmd mcp`): hosts still launch this as a subprocess. Opening
   `initialize` (2025) or a `_meta`-enveloped request / `server/discover`
-  (2026) pins the connection's era.
+  (2026) pins the connection's era. The subprocess is a proxy: all `qmd mcp`
+  processes for one index share a detached daemon that holds the index and
+  the models and exits five minutes after its last client. `qmd status`
+  shows it, `qmd mcp stop` stops it, `QMD_NO_DAEMON=1` serves in-process.
 - **HTTP** (`qmd mcp --http`): sessionless Streamable HTTP. No
   `Mcp-Session-Id`, no handshake. Each POST is independent. 2026 clients
   MUST send `MCP-Protocol-Version`, `Mcp-Method`, and (for `tools/call`)

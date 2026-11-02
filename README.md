@@ -130,9 +130,36 @@ Or configure MCP manually in `~/.claude/settings.json`:
 }
 ```
 
+#### One daemon per index
+
+`qmd mcp` is launched as a subprocess by each MCP client, but the clients share
+one server. The first `qmd mcp` for an index starts a detached daemon that opens
+the index once and loads the models once; every `qmd mcp` after it, from any
+Claude session or editor, is a thin proxy that pipes its stdio to that daemon
+over a Unix socket. The daemon exits five minutes after its last client leaves.
+Nothing to configure: the MCP client entries above are unchanged.
+
+```sh
+qmd status                        # "Daemon: running (PID ..., up 3m)" while one serves this index
+qmd mcp stop                      # stop the daemon for this index (clients reconnect to a new one)
+```
+
+The daemon's socket, pid file and log live under `~/.cache/qmd/run/<index key>/`
+(`$XDG_CACHE_HOME/qmd/run/...` when set). A `--index <name>` or a project-local
+`.qmd/` index gets its own daemon. While the daemon runs it holds the index
+writer lock, so `qmd update` and `qmd embed` report it as the writer.
+
+| Variable | Effect |
+|----------|--------|
+| `QMD_NO_DAEMON=1` | Serve this `qmd mcp` in-process, as before 2.9; no daemon is started or used. |
+| `QMD_DAEMON_IDLE_MS` | Exit this long after the last client disconnects (default 300000; 0 never). |
+| `QMD_DAEMON_MAX_IDLE_MS` | Exit after this long without any inbound request when no connected client can be proven alive (default 1800000; 0 off). |
+| `QMD_DAEMON_SWEEP_MS` | How often to drop clients whose process has exited (default 30000; 0 off). |
+| `QMD_PPID_POLL_MS` | How often a proxy checks that its MCP host is alive (default 5000; 0 off). |
+
 #### HTTP Transport
 
-By default, QMD's MCP server uses stdio (launched as a subprocess by each client). For a shared, long-lived server that avoids repeated model loading, use the HTTP transport:
+For clients that speak Streamable HTTP, or to serve several machines, use the HTTP transport:
 
 ```sh
 # Foreground (Ctrl-C to stop)

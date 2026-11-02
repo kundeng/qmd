@@ -286,6 +286,9 @@ describe("qmd mcp stdio process lifecycle", () => {
           ...process.env,
           INDEX_PATH: join(workDir, "lifecycle.sqlite"),
           QMD_CONFIG_DIR: workDir,
+          // This test is about the in-process server's EOF shutdown; the
+          // shared daemon has its own lifecycle tests.
+          QMD_NO_DAEMON: "1",
         },
         stdio: ["pipe", "pipe", "pipe"],
       });

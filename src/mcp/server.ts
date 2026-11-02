@@ -248,7 +248,7 @@ function getInstructions(store: QMDStore): Promise<string> {
  * Create an MCP server with all QMD tools, resources, and prompts registered.
  * Shared by both stdio and HTTP transports.
  */
-async function createMcpServer(store: QMDStore, inflight?: InflightGate): Promise<McpServer> {
+export async function createMcpServer(store: QMDStore, inflight?: InflightGate): Promise<McpServer> {
   // Wraps request handlers so a stdio EOF shutdown can wait for in-flight
   // work to settle before disposing the store/llm underneath it.
   const track = inflight?.track ?? (<T,>(fn: T): T => fn);
@@ -1006,18 +1006,24 @@ export function registerStdioEofShutdown(options: StdioShutdownOptions): () => P
   return shutdown;
 }
 
-export async function startMcpServer(options: McpStartupOptions = {}): Promise<void> {
-  // Opt into production mode when the MCP server is actually started, not
-  // when this module is merely imported for its exports. Importing the module
-  // at the top level flipped the global production flag and broke test
-  // isolation for downstream suites that expect the default (development)
-  // database path behaviour.
+/**
+ * Open the store the MCP server serves: the index at `dbPath` plus the active
+ * YAML config when it exists. Production mode is switched on here, when a
+ * server actually starts, not when this module is imported for its exports:
+ * flipping it at import time made tests that import the module write to the
+ * global index.
+ */
+export async function openMcpStore(dbPath?: string): Promise<QMDStore> {
   enableProductionMode();
   const configPath = getConfigPath();
-  const store = await createStore({
-    dbPath: options.dbPath ?? getDefaultDbPath(),
+  return createStore({
+    dbPath: dbPath ?? getDefaultDbPath(),
     ...(existsSync(configPath) ? { configPath } : {}),
   });
+}
+
+export async function startMcpServer(options: McpStartupOptions = {}): Promise<void> {
+  const store = await openMcpStore(options.dbPath);
   const inflight = createInflightGate();
   // serveStdio dual-speaks 2026-07-28 and 2025-era clients on one connection
   // (opening exchange pins the era). A hand-wired StdioServerTransport would
