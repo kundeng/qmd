@@ -1,0 +1,72 @@
+bun test v1.3.6 (d530ed99)
+
+test/store.test.ts:
+5829 |     const worker = join(projectRoot, "test", "_helpers", "legacy-adoption-shared-body-worker.ts");
+5830 |     const args = isBun ? [worker] : [join(projectRoot, "node_modules", "tsx", "dist", "cli.mjs"), worker];
+5831 |     const result = spawnSync(process.execPath, args, { encoding: "utf8", timeout: 60_000 });
+5832 | 
+5833 |     expect(result.error).toBeUndefined();
+5834 |     expect(result.stderr).toBe("");
+                                 ^
+error: expect(received).toBe(expected)
+
+- ""
++ "SQLiteError: out of memory
++       errno: 7,
++  byteOffset: -1,
++        code: "SQLITE_NOMEM"
++ 
++       at run (unknown:1:1)
++       at run (bun:sqlite:322:21)
++ 
++ Bun v1.3.6 (macOS arm64)
++ "
+
+- Expected  - 1
++ Received  + 10
+
+      at <anonymous> (/Users/kundeng/.local/share/project-git/qmd-worktrees/ci/test/store.test.ts:5834:27)
+(fail) Embedding batching > legacy fingerprint adoption reads one copy of a body shared by 200 active paths within a 16 MiB SQLite budget [8986.28ms]
+
+test/doctor-vector-sampling.test.ts:
+114 |     // SQLite's hard heap limit is process-wide and cannot be raised again.
+115 |     const worker = join(projectRoot, "test", "_helpers", "doctor-vector-check-worker.ts");
+116 |     const args = isBun ? [worker] : [join(projectRoot, "node_modules", "tsx", "dist", "cli.mjs"), worker];
+117 |     const result = spawnSync(process.execPath, args, { encoding: "utf8", timeout: 60_000 });
+118 |     expect(result.error).toBeUndefined();
+119 |     expect(result.stderr).toBe("");
+                                ^
+error: expect(received).toBe(expected)
+
+- ""
++ "26 |         store.insertEmbedding(hash, seq, 0, new Float32Array([1, 0]), "model", "2026-01-01", 32, "current");
++ 27 |       }
++ 28 |     }
++ 29 |   })();
++ 30 |   store.db.exec("PRAGMA temp_store = MEMORY");
++ 31 |   store.db.exec("PRAGMA hard_heap_limit = 33554432");
++                 ^
++ SQLiteError: out of memory
++       errno: 7,
++  byteOffset: -1,
++        code: "SQLITE_NOMEM"
++ 
++       at run (bun:sqlite:322:21)
++       at /Users/kundeng/.local/share/project-git/qmd-worktrees/ci/test/_helpers/doctor-vector-check-worker.ts:31:12
++ 
++ Bun v1.3.6 (macOS arm64)
++ "
+
+- Expected  - 1
++ Received  + 17
+
+      at <anonymous> (/Users/kundeng/.local/share/project-git/qmd-worktrees/ci/test/doctor-vector-sampling.test.ts:119:27)
+(fail) doctor vector sampling > the doctor check verifies large documents with duplicate paths within a 32 MiB SQLite budget [231.12ms]
+
+ 1 pass
+ 44 skip
+ 2 fail
+ 8 expect() calls
+Ran 47 tests across 3 files. [9.50s]
+exit=1
+test/store.test.ts

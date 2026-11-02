@@ -1,6 +1,6 @@
 ---
 spec_id: 03-live-indexing
-status: DRAFT
+status: ACTIVE
 closed_as: null
 since: 2026-11-02
 until: null
@@ -98,20 +98,21 @@ Anchored in `docs/design/live-index-daemon.md`: dataflow, workflows "A file save
 
 # Tasks
 
-- [ ] 1. Foundation
-  - [ ] 1.1 `reindexFiles` in `store.ts`; `reindexCollectionIn` uses it
-- [ ] 2. Core
-  - [ ] 2.1 `watcher.ts`
-  - [ ] 2.2 `live-index.ts` with the serialized queue, reconcile, apply, embed, cleanup
-  - [ ] 2.3 wire into `daemon.ts`; start-up reconcile
-  - [ ] 2.4 staleness in `server.ts`
-  - [ ] 2.5 `control.ts`; CLI delegation
-- [ ] 3. Tests
-  - [ ] 3.1 reindexFiles units
-  - [ ] 3.2 watcher units
-  - [ ] 3.3 end to end
-- [ ] 4. Polish And Docs
-  - [ ] 4.1 README, skill, CHANGELOG
+- [x] 1. Foundation
+  - [x] 1.1 `reindexFiles` in `store.ts`; `reindexCollectionIn` uses it
+- [x] 2. Core
+  - [x] 2.1 `watcher.ts`
+  - [x] 2.2 `live-index.ts` with the serialized queue, reconcile, apply, embed, cleanup
+  - [x] 2.3 wire into `daemon.ts`; start-up reconcile
+  - [x] 2.4 staleness in `server.ts`
+  - [x] 2.5 `control.ts`; CLI delegation
+- [x] 3. Tests
+  - [x] 3.1 reindexFiles units
+  - [x] 3.2 watcher units
+  - [x] 3.3 end to end
+- [x] 4. Polish And Docs
+  - [x] 4.1 README, skill, CHANGELOG
 
 ## Log
 - 2026-11-02: spec written.
+- 2026-11-02: implemented on branch `live/03-live-indexing`. `src/store.ts`: the per-file scan body moved into `CollectionScan`, shared by `reindexCollection` and the new `reindexFiles`; `src/daemon/watcher.ts` (`CollectionWatcher`), `src/daemon/live-index.ts` (`LiveIndexer`, one serialized write queue), `src/daemon/control.ts` (control protocol: `update`, `embed`, `reload`, `cleanup`, `status`), `src/daemon/daemon.ts` (watchers, start-up reconcile, control handling, staleness adapter), `src/mcp/server.ts` (`stale` flag, pending line, `Live indexing` status line, default collections read per call so a session sees a collection added later), `src/cli/qmd.ts` (update, embed, cleanup, collection add/remove/rename delegate to a daemon holder; hooks still run in the CLI). Beyond the spec: `collection add|remove|rename` and `cleanup` delegate too, through a `reload` and a `cleanup` control op, because a daemon that holds the writer lock would otherwise block every collection change while any Claude session is open. Measured in the smoke run (`QMD_WATCH_DEBOUNCE_MS=300`): a saved file is keyword-searchable 350 ms after the save, a deleted file is gone within one flush, a new directory triggers a full scan that completes in under 400 ms on a 3-file collection; start-up reconcile of 2 files took 8 ms. Tests: `test/reindex-files.test.ts` (8), `test/watcher.test.ts` (12), `test/mcp-daemon-live.test.ts` (2 end to end), all passing under vitest on Node 24.12.0.

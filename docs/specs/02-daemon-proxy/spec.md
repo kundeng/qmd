@@ -1,7 +1,7 @@
 ---
 spec_id: 02-daemon-proxy
-status: ACTIVE
-closed_as: null
+status: CLOSED
+closed_as: SHIPPED
 since: 2026-11-02
 until: null
 epic: live-index
@@ -167,3 +167,4 @@ sequenceDiagram
 ## Log
 - 2026-11-02: spec written.
 - 2026-11-02: implemented on branch `live/02-daemon-proxy` (commits 6e82cdd and a lint fix). Files: `src/daemon/{early-ppid,paths,clients,hello-stream,proxy,daemon,launch,control}.ts`, `src/mcp/server.ts` (`createMcpServer` and `openMcpStore` exported), `src/cli/qmd.ts` (mcp dispatch, `mcp stop`, `status`). Tests: `test/daemon-paths.test.ts` (10), `test/daemon-clients.test.ts` (6), `test/mcp-daemon.test.ts` (4 end to end: two clients one daemon with idle exit, host death reaped by the parent watchdog, `QMD_NO_DAEMON=1`, `status` and `mcp stop`), all passing under vitest on Node 24.12.0 and under bun 1.3.6. Measured cold start to `tools/list`: 545 ms for the first client, 690 ms for the second attaching to the running daemon. Deviations: no launcher-side election lock; a launcher spawns when `daemon.pid` names no live pid and the daemon's own atomic acquire decides between racing daemons. Probe connections (status, stop) are not counted as clients. The full suite run on this commit is recorded at close.
+- 2026-11-02: closed as shipped at commit 9b299d8 on `live/02-daemon-proxy`. Full suite on that commit (`bun run test:unit`, CI worktree): vitest 60 files all passing; bun 1557 passing, 2 failing: `store.test.ts` "legacy fingerprint adoption ... within a 16 MiB SQLite budget" and `doctor-vector-sampling.test.ts` "... within a 32 MiB SQLite budget". Both fail identically on untouched upstream `main` (86d2365) under bun 1.3.6 on this machine (`docs/history/measurement-2026-11-02-live-daemon/bun-budget-main.log`), so they are pre-existing memory-budget flakes, not regressions.
