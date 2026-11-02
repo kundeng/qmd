@@ -40,6 +40,8 @@ async function makeEnv(prefix: string, extra: Env = {}): Promise<{ work: string;
   return { work, env, runDir: join(work, "cache", "qmd", "run") };
 }
 
+type JsonRpcMessage = { jsonrpc: "2.0"; id?: number; method: string; params?: Record<string, unknown> };
+
 type Client = { child: ChildProcess; exited: Promise<number | null>; output: () => string; stderr: () => string; reply: (id: number, timeoutMs?: number) => Promise<Record<string, unknown>> };
 
 function startClient(env: Env, viaShell = false): Client {
@@ -54,7 +56,7 @@ function startClient(env: Env, viaShell = false): Client {
   let err = "";
   child.stdout!.on("data", (d: Buffer) => { out += d.toString(); });
   child.stderr!.on("data", (d: Buffer) => { err += d.toString(); });
-  const send = (msg: object) => child.stdin!.write(JSON.stringify(msg) + "\n");
+  const send = (msg: JsonRpcMessage) => child.stdin!.write(JSON.stringify(msg) + "\n");
   send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } } });
   send({ jsonrpc: "2.0", method: "notifications/initialized" });
   send({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
