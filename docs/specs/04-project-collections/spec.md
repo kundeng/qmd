@@ -1,6 +1,6 @@
 ---
 spec_id: 04-project-collections
-status: DRAFT
+status: ACTIVE
 closed_as: null
 since: 2026-11-02
 until: null
@@ -64,10 +64,11 @@ WHEN the daemon embeds, THE indexer SHALL pass `chunkStrategy: "auto"`.
 
 # Tasks
 
-- [ ] 1. `initLocalIndex` presets and ignore file
-- [ ] 2. cleanup step and auto chunking in the cycle
-- [ ] 3. tests
-- [ ] 4. docs and CHANGELOG
+- [x] 1. `initLocalIndex` presets and ignore file
+- [x] 2. cleanup step and auto chunking in the cycle (landed in 03: `LiveIndexer.cleanupVectors` after every apply that updated or removed, `chunkStrategy: "auto"` default)
+- [x] 3. tests
+- [x] 4. docs and CHANGELOG
 
 ## Log
 - 2026-11-02: spec written.
+- 2026-11-02: committed as 35e1a86 on `live/04-project-collections`. `initLocalIndex` adds `docs` and `code` presets rooted at the project (absolute path, as `collection add` writes; relative paths are resolved only by the trust check, `src/trust.ts:200`, not by the scanner, so a cloned `.qmd/index.yml` still names the original machine's path: open item) and writes `.qmd/.gitignore`. Tests: `test/cli.test.ts` "CLI Init Command" (4) under vitest and bun. R3 (orphan cleanup after replaced hashes) and R4 (auto chunking) were delivered by sprint 03's `LiveIndexer`; verification on inventory-catalog is in the measurement record.
