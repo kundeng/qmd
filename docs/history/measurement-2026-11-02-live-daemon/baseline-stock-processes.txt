@@ -1,0 +1,107 @@
+# captured 2026-11-02T03:27:27Z on bayes-max.local: stock qmd 2.8.3 stdio MCP servers left running by Claude sessions
+ 3581  3565   0.0  40560 04-22:54:04 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+ 3587  3581   0.0  44784 04-22:54:04 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+ 3921  3869   0.0  34928 04-00:16:21 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+ 3928  3921   0.0  49984 04-00:16:21 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+ 4097  4057   0.0  40592 04-00:16:00 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+ 4111  4097   0.0  49840 04-00:16:00 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+ 4403  4380   0.0  48016    01:17:08 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+ 4405  4403   0.0 117168    01:17:08 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+ 4556  4533   0.0  40672 04-00:14:42 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+ 4569  4556   0.0  49584 04-00:14:42 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+ 4705  4643   0.0  34992    20:13:22 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+ 4725  4705   0.0  75680    20:13:22 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+ 6529  6506   0.0  48192    04:09:20 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+ 6531  6529   0.0 118096    04:09:20 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+ 9907  9829   0.0  49120 04-09:31:02 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+ 9915  9907   0.0 117712 04-09:31:02 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+19650 19634   0.0  47360       54:05 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+19658 19650   0.0 117680       54:05 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+23032 22306   0.0  47088 04-22:14:09 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/bin/qmd mcp
+23033 23032   0.0 109264 04-22:14:09 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+23269 23146   0.0  46016 04-22:14:01 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+23271 23269   0.0  45264 04-22:14:01 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+25115 25079   0.0  34976 01-09:01:01 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+25116 25115   0.0  44864 01-09:01:01 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+25233 25189   0.0  34976 01-09:00:57 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+25239 25233   0.0  44864 01-09:00:57 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+27333 27317   0.0  40368 01-08:57:05 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+27337 27333   0.0  64784 01-08:57:05 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+37046 37010   0.0  47440       32:07 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+37052 37046   0.0 117712       32:07 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+39582 39506   0.0  38640 01-19:57:15 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+39593 39582   0.0  50288 01-19:57:15 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+41075 41021   0.0  34896 04-21:45:33 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+41082 41075   0.0  96016 04-21:45:33 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+46498 46478   0.0  34976 01-19:48:23 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+46505 46498   0.0  50240 01-19:48:23 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+49714 49663   0.0  48336 03-08:18:59 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+49721 49714   0.0 117136 03-08:18:59 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+50079 50036   0.0  34992 01-19:46:55 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+50108 50079   0.0  44864 01-19:46:55 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+51118 51097   0.0  40112 01-04:06:04 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+51132 51118   0.0 235680 01-04:06:04 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+62061 61956   0.0  38560 01-22:11:18 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+62074 62061   0.0  44880 01-22:11:18 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+71050 71020   0.0  40400 01-21:51:16 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+71062 71050   0.0  73904 01-21:51:16 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+75453 75433   0.0  34976    13:11:49 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+75459 75453   0.0  50016    13:11:49 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+76130 76109   0.0  41312 01-10:56:39 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+76132 76130   0.0  82064 01-10:56:39 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+87767 87711   0.0  39040 02-22:46:51 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+87791 87767   0.0  86032 02-22:46:51 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+94366 94347   0.0  48624 04-23:18:32 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+94368 94366   0.0 117008 04-23:18:32 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+96008 95955   0.0  47296 04-23:12:50 node /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/qmd mcp
+96012 96008   0.0 116656 04-23:12:50 /Users/kundeng/.local/share/mise/installs/node/24.12.0/bin/node /Users/kundeng/.local/share/mise/installs/node/24.12.0/lib/node_modules/@tobilu/qmd/dist/cli/qmd.js mcp
+
+# sum RSS KB:
+3494128 KB = 3412.23 MB
+
+# index:
+-rw-r--r--  1 kundeng  staff  786739200 Oct  4 23:10 /Users/kundeng/.cache/qmd/index.sqlite
+-rw-r--r--  1 kundeng  staff      32768 Oct 25 12:12 /Users/kundeng/.cache/qmd/index.sqlite-shm
+-rw-r--r--  1 kundeng  staff    4284832 Oct 31 19:27 /Users/kundeng/.cache/qmd/index.sqlite-wal
+
+# idle cpu sample (top -l 3, 1s): 
+96079  0.0  16M   node            
+96012  0.0  76M   node            
+96010  0.0  46M   node            
+96008  0.0  13M   node            
+96007  0.0  13M   node            
+94372  0.0  16M   node            
+94368  0.0  77M   node            
+94367  0.0  44M   node            
+94366  0.0  14M   node            
+94365  0.0  12M   node            
+87814  0.0  16M   node            
+87791  0.0  76M   node            
+87783  0.0  45M   node            
+87767  0.0  13M   node            
+87766  0.0  13M   node            
+76132  0.0  76M   node            
+76131  0.0  44M   node            
+76130  0.0  15M   node            
+76129  0.0  12M   node            
+75464  0.0  16M   node            
+75459  0.0  76M   node            
+75458  0.0  44M   node            
+75453  0.0  13M   node            
+75452  0.0  12M   node            
+71088  0.0  16M   node            
+71062  0.0  76M   node            
+71059  0.0  44M   node            
+71050  0.0  15M   node            
+71049  0.0  12M   node            
+62080  0.0  16M   node            
+62074  0.0  76M   node            
+62071  0.0  46M   node            
+62061  0.0  15M   node            
+62060  0.0  12M   node            
+61060  0.0  13M   node            
+61038  0.0  67M   node            
+61026  0.0  12M   node            
+59912  0.0  61M   node            
+59881  0.0  105M  node            
+59879  0.0  25M   node            

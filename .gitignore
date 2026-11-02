@@ -19,3 +19,4 @@ texts/
 finetune/outputs/
 finetune/data/train/
 .claude/
+!docs/**/*.md
