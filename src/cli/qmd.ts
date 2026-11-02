@@ -632,12 +632,55 @@ function initLocalIndex(): void {
     ensureModelsConfiguredForCli();
   }
 
+  // A project index covers the project's documentation and its code. The
+  // presets are added once; a name the config already has is left as is.
+  const config = loadConfig();
+  const added: string[] = [];
+  for (const [name, preset] of Object.entries(PROJECT_INDEX_PRESETS)) {
+    if (config.collections[name]) continue;
+    config.collections[name] = { path: cwd, pattern: preset.pattern };
+    added.push(name);
+  }
+  if (added.length > 0) saveConfig(config);
+
+  // The database and lock files are machine-local; the YAML is what a
+  // checkout shares (see `qmd trust`).
+  const ignorePath = pathJoin(qmdDir, ".gitignore");
+  if (!existsSync(ignorePath)) writeFileSync(ignorePath, PROJECT_INDEX_GITIGNORE);
+
   const localStore = createStore(dbPath);
   syncConfigToDb(localStore.db, loadConfig());
   localStore.close();
 
   console.log("ready to go with new local index");
+  for (const name of added) {
+    console.log(`  ${c.green}+${c.reset} collection '${name}' (${PROJECT_INDEX_PRESETS[name]!.pattern})`);
+  }
+  if (added.length > 0) {
+    console.log(`${c.dim}Index them with 'qmd update' then 'qmd embed', or start 'qmd mcp' and the daemon keeps them current.${c.reset}`);
+  }
+  if (process.platform === "darwin") {
+    console.log(`${c.dim}In a Dropbox folder, keep the index out of sync: xattr -w com.dropbox.ignored 1 ${qmdDir}${c.reset}`);
+  }
 }
+
+/**
+ * The collections `qmd init` gives a project: its Markdown and its source in
+ * the languages the AST chunker handles (TypeScript, JavaScript, Python, Go,
+ * Rust). `node_modules`, `.git`, `dist`, `build`, `vendor` and `.cache` are
+ * excluded by the scanner for every collection.
+ */
+const PROJECT_INDEX_PRESETS: Record<string, { pattern: string }> = {
+  docs: { pattern: "**/*.md" },
+  code: { pattern: "**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,rs}" },
+};
+
+const PROJECT_INDEX_GITIGNORE = `# qmd project index: the database and locks are machine-local; index.yml is shared.
+index.sqlite
+index.sqlite-shm
+index.sqlite-wal
+.qmd-*.lock
+`;
 
 function isForceCpuEnabled(): boolean {
   const value = process.env.QMD_FORCE_CPU;

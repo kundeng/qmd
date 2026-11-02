@@ -791,6 +791,11 @@ named index uses `{name}.yml` — `qmd --index work …` reads/writes `work.yml`
 A **project-local** index created with `qmd init` lives at `.qmd/index.yml`
 (`.qmd/index.yaml` is also accepted) alongside a project-local `index.sqlite`,
 so config and index stay inside the project instead of `~/.config` / `~/.cache`.
+`qmd init` gives the project two collections, `docs` (`**/*.md`) and `code`
+(`**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,rs}`), both rooted at the project, and a
+`.qmd/.gitignore` that keeps the database and lock files out of the checkout.
+Any `qmd mcp` started inside the project uses this index, and its daemon keeps
+both collections current as files change.
 
 ```yaml
 # ~/.config/qmd/index.yml

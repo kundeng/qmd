@@ -19,6 +19,7 @@ import { createStore, insertContent, insertDocument } from "../src/store.ts";
 import { VEC_COLLECTION_IDS_TABLE, VEC_ROWS_TABLE, VEC_TABLE } from "../src/vec-layout.ts";
 import { DEFAULT_EMBED_MODEL_URI, DEFAULT_GENERATE_MODEL_URI, DEFAULT_RERANK_MODEL_URI } from "../src/llm.ts";
 import { setConfigSource } from "../src/collections.ts";
+import YAML from "yaml";
 
 // Test fixtures directory and database path
 let testDir: string;
@@ -441,18 +442,61 @@ describe("CLI Skill Commands", () => {
 });
 
 describe("CLI Init Command", () => {
-  test("creates a project-local .qmd index", async () => {
+  test("creates a project-local .qmd index with docs and code collections", async () => {
     const projectDir = join(testDir, "init-project");
     await mkdir(projectDir, { recursive: true });
 
     const { stdout, exitCode } = await runQmd(["init"], { cwd: projectDir });
     expect(exitCode).toBe(0);
-    expect(stdout.trim()).toBe("ready to go with new local index");
+    expect(stdout).toContain("ready to go with new local index");
+    expect(stdout).toContain("collection 'docs' (**/*.md)");
+    expect(stdout).toContain("collection 'code' (**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,rs})");
     expect(existsSync(join(projectDir, ".qmd", "index.yml"))).toBe(true);
     expect(existsSync(join(projectDir, ".qmd", "index.sqlite"))).toBe(true);
     const configText = readFileSync(join(projectDir, ".qmd", "index.yml"), "utf-8");
-    expect(configText).toContain("collections: {}");
     expect(configText).toContain("models:");
+    const config = YAML.parse(configText) as { collections: Record<string, { path: string; pattern: string }> };
+    expect(Object.keys(config.collections).sort()).toEqual(["code", "docs"]);
+    expect(config.collections.docs).toEqual({ path: projectDir, pattern: "**/*.md" });
+    expect(config.collections.code!.path).toBe(projectDir);
+    const ignore = readFileSync(join(projectDir, ".qmd", ".gitignore"), "utf-8");
+    expect(ignore).toContain("index.sqlite");
+    expect(ignore).toContain(".qmd-*.lock");
+  });
+
+  test("a second init adds nothing and keeps the user's collections", async () => {
+    const projectDir = join(testDir, "init-twice");
+    await mkdir(join(projectDir, ".qmd"), { recursive: true });
+    await writeFile(join(projectDir, ".qmd", "index.yml"), `collections:\n  docs:\n    path: ${projectDir}/manual\n    pattern: "*.md"\n`);
+
+    const first = await runQmd(["init"], { cwd: projectDir });
+    expect(first.exitCode).toBe(0);
+    // `docs` exists, so only `code` is added.
+    expect(first.stdout).not.toContain("collection 'docs'");
+    expect(first.stdout).toContain("collection 'code'");
+
+    const second = await runQmd(["init"], { cwd: projectDir });
+    expect(second.exitCode).toBe(0);
+    expect(second.stdout).not.toContain("+ collection");
+    const config = YAML.parse(readFileSync(join(projectDir, ".qmd", "index.yml"), "utf-8")) as { collections: Record<string, { path: string; pattern: string }> };
+    expect(config.collections.docs).toEqual({ path: `${projectDir}/manual`, pattern: "*.md" });
+    expect(Object.keys(config.collections).sort()).toEqual(["code", "docs"]);
+  });
+
+  test("init, update and search work together on a project with docs and code", async () => {
+    const projectDir = join(testDir, "init-search");
+    await mkdir(join(projectDir, "src"), { recursive: true });
+    await writeFile(join(projectDir, "README.md"), "# Init Search\n\nThe pelican guide.\n");
+    await writeFile(join(projectDir, "src", "main.ts"), "export function flamingoDance(): string {\n  return 'pink';\n}\n");
+    await runQmd(["init"], { cwd: projectDir });
+    const update = await runQmd(["update"], { cwd: projectDir });
+    expect(update.exitCode).toBe(0);
+    const docs = await runQmd(["search", "pelican", "--json"], { cwd: projectDir });
+    expect(docs.exitCode).toBe(0);
+    expect(docs.stdout).toContain("README.md");
+    const code = await runQmd(["search", "flamingoDance", "--json"], { cwd: projectDir });
+    expect(code.exitCode).toBe(0);
+    expect(code.stdout).toContain("src/main.ts");
   });
 
   test("refuses to initialize in HOME", async () => {
