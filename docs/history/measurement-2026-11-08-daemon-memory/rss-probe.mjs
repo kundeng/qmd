@@ -1,0 +1,23 @@
+// Does disposing contexts/models return RSS? Uses the bench index (models already downloaded).
+import { createStore } from "/Users/kundeng/.local/share/project-git/qmd-worktrees/live/dist/index.js";
+import { execSync } from "node:child_process";
+const rss = () => Math.round(Number(execSync(`ps -o rss= -p ${process.pid}`).toString()) / 1024) + " MB";
+const work = "/Users/kundeng/.local/share/qmd-bench/out/fork";
+process.env.XDG_CACHE_HOME = work + "/cache";
+const store = await createStore({ dbPath: work + "/cache/qmd/index.sqlite", configPath: work + "/index.yml" });
+console.log("start", rss());
+let t = Date.now(); let r = await store.search({ query: "how are simulated events generated for the catalog", limit: 5 });
+console.log("after full query", rss(), r.length, "results", Date.now() - t, "ms");
+t = Date.now(); r = await store.search({ query: "simulation site inventory", limit: 5 });
+console.log("after 2nd query", rss(), Date.now() - t, "ms");
+const llm = store.internal.llm;
+console.log("contexts loaded?", { embed: llm.embedContexts?.length, rerank: llm.rerankContexts?.length, gen: !!llm.generateModel, disposeModels: llm.disposeModelsOnInactivity, timeout: llm.inactivityTimeoutMs, timer: !!llm.inactivityTimer });
+await llm.unloadIdleResources();
+await new Promise(r => setTimeout(r, 2000));
+console.log("after unloadIdleResources (contexts + models disposed per config)", rss());
+console.log("models still?", { embed: !!llm.embedModel, gen: !!llm.generateModel, rerank: !!llm.rerankModel });
+t = Date.now(); r = await store.search({ query: "simulation site inventory", limit: 5 });
+console.log("after reload query", rss(), Date.now() - t, "ms");
+await store.close(); await new Promise(r => setTimeout(r, 1000));
+console.log("after store.close", rss());
+process.exit(0);
