@@ -855,6 +855,13 @@ export class LlamaCpp implements LLM {
   // bound to different Llama instances ("different Llama instance" errors).
   private llamaLoadPromise: Promise<Llama> | null = null;
 
+  // Sessions and operations open on THIS instance. The idle timer consults
+  // them, so a per-store instance (the SDK, the index daemon) is never
+  // unloaded under a running search; `canUnloadLLM()` below sees only the
+  // default singleton's manager.
+  private activeSessions = 0;
+  private inFlightOperations = 0;
+
   // Inactivity timer for auto-unloading models
   private inactivityTimer: ReturnType<typeof setTimeout> | null = null;
   private inactivityTimeoutMs: number;
@@ -910,7 +917,7 @@ export class LlamaCpp implements LLM {
         // Check if session manager allows unloading
         // canUnloadLLM is defined later in this file - it checks the session manager
         // We use dynamic import pattern to avoid circular dependency issues
-        if (typeof canUnloadLLM === 'function' && !canUnloadLLM()) {
+        if (!this.canUnloadNow() || (typeof canUnloadLLM === 'function' && !canUnloadLLM())) {
           // Active sessions/operations - reschedule timer
           this.touchActivity();
           return;
@@ -922,6 +929,30 @@ export class LlamaCpp implements LLM {
       // Don't keep process alive just for this timer
       this.inactivityTimer.unref();
     }
+  }
+
+  /** A session opened on this instance; the idle timer waits for it. */
+  sessionAcquired(): void {
+    this.activeSessions++;
+  }
+
+  sessionReleased(): void {
+    this.activeSessions = Math.max(0, this.activeSessions - 1);
+    // A session that ends with contexts loaded starts the idle clock.
+    this.touchActivity();
+  }
+
+  operationStarted(): void {
+    this.inFlightOperations++;
+  }
+
+  operationEnded(): void {
+    this.inFlightOperations = Math.max(0, this.inFlightOperations - 1);
+  }
+
+  /** True when no session or operation on this instance is open. */
+  canUnloadNow(): boolean {
+    return this.activeSessions === 0 && this.inFlightOperations === 0;
   }
 
   /**
@@ -1952,18 +1983,22 @@ class LLMSessionManager {
 
   acquire(): void {
     this._activeSessionCount++;
+    this.llm.sessionAcquired();
   }
 
   release(): void {
     this._activeSessionCount = Math.max(0, this._activeSessionCount - 1);
+    this.llm.sessionReleased();
   }
 
   operationStart(): void {
     this._inFlightOperations++;
+    this.llm.operationStarted();
   }
 
   operationEnd(): void {
     this._inFlightOperations = Math.max(0, this._inFlightOperations - 1);
+    this.llm.operationEnded();
   }
 
   getLlamaCpp(): LlamaCpp {

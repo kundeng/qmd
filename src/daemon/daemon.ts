@@ -456,7 +456,18 @@ function openLog(logPath: string): number {
  * Entry for the detached daemon process. Returns only when the daemon has
  * exited or refused to start; the CLI sets the exit code from the outcome.
  */
+/**
+ * Embedding contexts the daemon keeps while it embeds. `qmd embed` sizes its
+ * pool from free VRAM (up to 8 contexts of about 150 MB each for the default
+ * model) because it has a whole backlog to push through; the daemon mostly
+ * embeds one or two changed files at a time and would hold that pool for the
+ * five minutes until the models unload. Two contexts cover a save burst;
+ * `QMD_EMBED_PARALLELISM` set by the user wins.
+ */
+export const DAEMON_EMBED_PARALLELISM = "2";
+
 export async function runIndexDaemon(dbPath: string): Promise<number> {
+  if (!process.env.QMD_EMBED_PARALLELISM?.trim()) process.env.QMD_EMBED_PARALLELISM = DAEMON_EMBED_PARALLELISM;
   const paths = daemonPaths(dbPath);
   mkdirSync(paths.dir, { recursive: true });
   const logFd = openLog(paths.logPath);
