@@ -1,7 +1,7 @@
 ---
 spec_id: 05-daemon-memory
-status: ACTIVE
-closed_as: null
+status: CLOSED
+closed_as: SHIPPED
 since: 2026-11-08
 until: null
 epic: live-index
@@ -59,8 +59,9 @@ The daemon's RSS after start-up embedding, after a full query, and after six idl
 
 - [x] 1. per-instance session veto (`test/llm-session-veto.test.ts`, 2 tests)
 - [x] 2. daemon embed pool cap
-- [ ] 3. measurement on a quiet copy, old versus new pool, recorded in `docs/history/measurement-2026-11-08-daemon-memory/`
+- [x] 3. measurement on a quiet copy, old versus new pool, recorded in `docs/history/measurement-2026-11-08-daemon-memory/`
 - [x] 4. CHANGELOG
 
 ## Log
 - 2026-11-08: committed as ec7411b on `live/05-daemon-memory`; `test/llm-session-veto.test.ts` and `test/llm.test.ts` pass under vitest (54). Measurement running.
+- 2026-11-08: closed as shipped. Measurement `docs/history/measurement-2026-11-08-daemon-memory/README.md`: loaded daemon 10,145 MB with the old pool, 5,624 MB with two contexts, both 0.8 to 0.9 GB after the five-minute unload; start-up embedding of 3,374 chunks 99 s versus 97 s.

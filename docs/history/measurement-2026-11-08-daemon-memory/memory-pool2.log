@@ -1,0 +1,13 @@
+# pool2 2026-11-09T01:14:48.863Z extra={}
+daemon pid 85571, RSS before embedding 1943 MB
+start-up reconcile + embed done after 97137 ms; daemon RSS 2067 MB; Vectors:  3374
+after full query (5 results): daemon RSS 5518 MB
+after second full query: daemon RSS 5624 MB
++1 min idle: daemon RSS 5489 MB
++2 min idle: daemon RSS 5489 MB
++3 min idle: daemon RSS 5489 MB
++4 min idle: daemon RSS 5489 MB
++5 min idle: daemon RSS 814 MB
++6 min idle: daemon RSS 814 MB
+idle wait 360075 ms
+done

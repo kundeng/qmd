@@ -1,0 +1,13 @@
+# pool8 2026-11-09T01:06:42.294Z extra={"QMD_EMBED_PARALLELISM":"8"}
+daemon pid 75872, RSS before embedding 2283 MB
+start-up reconcile + embed done after 99155 ms; daemon RSS 5291 MB; Vectors:  3374
+after full query (5 results): daemon RSS 10085 MB
+after second full query: daemon RSS 10145 MB
++1 min idle: daemon RSS 10145 MB
++2 min idle: daemon RSS 10145 MB
++3 min idle: daemon RSS 10145 MB
++4 min idle: daemon RSS 10145 MB
++5 min idle: daemon RSS 883 MB
++6 min idle: daemon RSS 883 MB
+idle wait 360084 ms
+done

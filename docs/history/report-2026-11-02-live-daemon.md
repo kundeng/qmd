@@ -16,7 +16,8 @@ Stacked, each the unit of one PR, in this order. Nothing was opened against `tob
 | 2 | `live/02-daemon-proxy` | feat(mcp): share one daemon per index across stdio sessions | `docs/specs/02-daemon-proxy` (SHIPPED) |
 | 3 | `live/03-live-indexing` | feat(index): keep the index current from file events | `docs/specs/03-live-indexing` (SHIPPED) |
 | 4 | `live/04-project-collections` | feat(init): docs and code collections for a project index | `docs/specs/04-project-collections` (SHIPPED) |
-| — | `live/main` | the four together, for running the fork | |
+| 5 | `live/05-daemon-memory` | fix(llm): idle unload waits for the instance's own sessions; daemon keeps two embed contexts | `docs/specs/05-daemon-memory` (SHIPPED) |
+| — | `live/main` | the five together, for running the fork | |
 | — | `live/00-spec` | design, specs, decisions, measurements; not for upstream | |
 
 Each code branch carries its CHANGELOG lines and README text. Each spec's Log names the commit, the tests and the full-suite run.
@@ -49,7 +50,7 @@ Earlier baseline from the machine itself, before any change: 28 stock servers al
 
 ## Open questions and follow-ups
 
-1. **Daemon memory after queries.** The daemon holds about 10 GB resident once it has answered a full query and embedded, and the five-minute model inactivity timeout does not bring it down (`settle.log`). Stock has the same per-session behaviour at about 6 GB. Candidates: dispose models (not only contexts) on inactivity in the daemon, and size the embedding context pool for the one-document batches live embedding produces. Technical, reversible; I would do it next.
+1. **Daemon memory after queries: resolved on 2026-11-08** (`live/05-daemon-memory`, `docs/history/measurement-2026-11-08-daemon-memory/`). The 10 GB was the embedding context pool sized for `qmd embed` (8 contexts); the daemon now keeps two, which puts a loaded daemon at 5.5 GB, where one stock session sat, shared by all sessions. The "not released" reading was other sessions editing the project during the measurement; on a quiet index the models unload after five minutes and the daemon returns to about 0.85 GB. The same change fixes a latent bug: a per-store `LlamaCpp` could be unloaded under a running search because the idle timer consulted only the default singleton's sessions.
 2. **Project config portability.** `qmd init` writes absolute collection paths, as `collection add` does, because the scanner resolves only absolute paths (the trust check resolves relative ones). A `.qmd/index.yml` cloned to another machine names the wrong root. Making the scanner resolve relative paths against the project is a small upstream change worth its own PR.
 3. **Daemon per project versus per machine.** Each project index gets its own daemon and, while embedding, its own copy of the embedding model. With two or three projects open at once that is 2 to 3 daemons. The design keeps one writer per database; a per-machine daemon serving several indexes would share models at the cost of routing sessions by index inside one process. Decided per index for now (`docs/decisions/2026-11-02-01-daemon-unit.md`); revisit if the owner runs many projects at once.
 4. **Two bun test failures** (`store.test.ts` 16 MiB budget, `doctor-vector-sampling.test.ts` 32 MiB budget) fail identically on untouched upstream main on this machine. Not ours; worth an upstream issue with the bun version.
@@ -65,4 +66,4 @@ The MCP registration was not changed. When ready:
 claude mcp add --scope user --env QMD_SOURCE_MODE=0 qmd -- /Users/kundeng/.local/share/project-git/qmd-worktrees/live/bin/qmd mcp
 ```
 
-`QMD_SOURCE_MODE=0` makes the checkout's launcher run the built `dist/` (built on 2026-11-02 from `live/main`; rebuild with `node scripts/build.mjs` after pulling). The first session starts the daemon for the global index; `qmd status` shows it; `qmd mcp stop` ends it.
+`QMD_SOURCE_MODE=0` makes the checkout's launcher run the built `dist/` (built on 2026-11-08 from `live/main`; rebuild with `node scripts/build.mjs` after pulling). The first session starts the daemon for the global index; `qmd status` shows it; `qmd mcp stop` ends it.
